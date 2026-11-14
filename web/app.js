@@ -347,7 +347,7 @@ function refreshPanel() {
   meter("m-unison", latest.unison, latest.unison.toFixed(2));
   meter("m-risk", latest.risk, latest.risk.toFixed(2));
   const bpm = Music.getTempo();
-  meter("m-tempo", (bpm - 60) / 60, `${Math.round(bpm)} bpm`);
+  meter("m-tempo", (bpm - 80) / 80, `${Math.round(bpm)} bpm`);
   const trust = Music.getTrust();
   for (const name of ANALYSTS) {
     const li = document.querySelector(`#analysts li[data-analyst="${name}"]`);
