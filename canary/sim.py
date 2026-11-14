@@ -1,21 +1,26 @@
 """Offline replay: run every analyst over a crash, day by day, with no network.
 
 Usage:
-    python -m desk.sim --replay 2020
-    python -m desk.sim --replay 2024
+    python -m canary.sim --replay 2020
+    python -m canary.sim --replay 2024
+    python -m canary.sim --replay 2020 --json > web/replay.json
 
 Same data in, same output out, every time. Systems' agents should produce
 the same numbers live; scripts/measure.py builds the lead-time table on top
-of run().
+of run(); the --json output lets the browser play a replay without agents.
 """
 
 import argparse
 import csv
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from desk.signals import (
+from canary.explain import load_reasons, reason
+
+from canary.signals import (
     CORRELATION_WINDOW,
     RISK_BASKET,
     basket,
@@ -26,7 +31,7 @@ from desk.signals import (
     risk_score,
     unison,
 )
-from desk.views import (
+from canary.views import (
     SLICES,
     TEMPERAMENTS,
     ZSCORE_WINDOW,
@@ -65,12 +70,14 @@ class Replay:
 REPLAYS: dict[str, Replay] = {
     "2020": Replay("2020", "2019-11-01", "2020-02-03", "2020-04-09"),
     "2024": Replay("2024", "2024-05-01", "2024-07-01", "2024-08-30"),
+    "2008": Replay("2008", "2008-05-01", "2008-07-01", "2008-12-31"),
+    "2022": Replay("2022", "2022-05-02", "2022-08-01", "2022-11-30"),
 }
 
 
 @dataclass(frozen=True)
 class Day:
-    """Everything the desk concludes on one trading day.
+    """Everything Canary concludes on one trading day.
 
     Attributes:
         date: Market date, "YYYY-MM-DD".
@@ -260,6 +267,76 @@ def report(replay: Replay, days: list[Day]) -> str:
     return "\n".join(lines)
 
 
+def round_floats(value: Any) -> Any:
+    """Round every float inside nested dicts and lists to 4 decimals.
+
+    Args:
+        value: A JSON-like value.
+
+    Returns:
+        The same structure with floats rounded, so the file stays small.
+    """
+    if isinstance(value, float):
+        return round(value, 4)
+    if isinstance(value, dict):
+        return {key: round_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [round_floats(item) for item in value]
+    return value
+
+
+def day_json(day: Day, cache: dict[str, str]) -> dict[str, Any]:
+    """One day as a JSON-ready dict, with a reason line on every view.
+
+    Args:
+        day: The day.
+        cache: Cached reason lines (see explain.load_reasons).
+
+    Returns:
+        date, correlation, unison, risk, drawdown, rebound, views, escalation.
+    """
+    return {
+        "date": day.date,
+        "correlation": day.correlation,
+        "unison": day.unison,
+        "risk": day.risk,
+        "drawdown": day.drawdown,
+        "rebound": day.rebound,
+        "views": [
+            {**view, "reason": reason(view, day.date, cache)} for view in day.views
+        ],
+        "escalation": day.escalation,
+    }
+
+
+def to_json(replay: Replay, days: list[Day], cache: dict[str, str]) -> str:
+    """The replay as JSON, for the browser's replay mode.
+
+    Shape: {"replay", "start", "end", "days": [...], "cards_before_replay": [...]}.
+    `days` holds only the replay window, oldest first; each `views` entry has
+    the same fields as in the live `view` message (minus `ts`). Cards that
+    fired before the window (false alarms) are listed separately.
+
+    Args:
+        replay: The replay that was run.
+        days: Output of run().
+        cache: Cached reason lines (see explain.load_reasons).
+
+    Returns:
+        Indented JSON text; identical every time for the same data.
+    """
+    window = [day for day in days if day.date >= replay.start]
+    earlier = [d.escalation for d in days if d.date < replay.start and d.escalation]
+    data = {
+        "replay": replay.name,
+        "start": replay.start,
+        "end": replay.end,
+        "days": [day_json(day, cache) for day in window],
+        "cards_before_replay": earlier,
+    }
+    return json.dumps(round_floats(data), indent=1)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Command-line entry point.
 
@@ -267,18 +344,23 @@ def main(argv: list[str] | None = None) -> int:
         argv: Arguments (defaults to the real command line).
 
     Returns:
-        Exit code: 0 on success, 1 if the data file can't be read.
+        Exit code: 0 on success, 1 if the data or reasons file can't be read.
     """
     parser = argparse.ArgumentParser(description="Replay a crash offline.")
     parser.add_argument("--replay", choices=sorted(REPLAYS), default="2020")
+    parser.add_argument(
+        "--json", action="store_true", help="print JSON for web/replay.json"
+    )
     args = parser.parse_args(argv)
     try:
         dates, prices = load_prices()
+        cache = load_reasons()
     except (OSError, ValueError) as e:
-        print(f"Could not read {DATA_FILE}: {e}", file=sys.stderr)
+        print(f"Could not read the data: {e}", file=sys.stderr)
         return 1
     replay = REPLAYS[args.replay]
-    print(report(replay, run(replay, dates, prices)))
+    days = run(replay, dates, prices)
+    print(to_json(replay, days, cache) if args.json else report(replay, days))
     return 0
 
 

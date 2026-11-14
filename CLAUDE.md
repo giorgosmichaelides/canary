@@ -6,8 +6,8 @@ This file is the source of truth. Long detail (formulas, protocol, demo script, 
 
 ## Current status
 
-- **Quant: done.** `data/fx_daily.csv` (cached), `desk/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/fetch_fx.py`, `scripts/measure.py`, tests in `tests/`. `python -m desk.sim --replay 2020` reproduces the demo (card on 2 Mar, rebounds 3–4 and 25–26 Mar).
-- **Systems:** `desk/bus.py` done; `agent.py`, `tape.py`, `relay.py`, `run.py` to build. Agents should call `views.slice_view` / `contrarian_view`, `signals.*`, `views.check_escalation` / `escalation`, `views.rebound` and `explain.reason`; their numbers must match `desk.sim`.
+- **Quant: done.** `data/fx_daily.csv` (cached), `canary/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/fetch_fx.py`, `scripts/measure.py`, tests in `tests/`. `python -m canary.sim --replay 2020` reproduces the demo (card on 2 Mar, rebounds 3–4 and 25–26 Mar).
+- **Systems:** `canary/bus.py` done; `agent.py`, `tape.py`, `relay.py`, `run.py` to build. Agents should call `views.slice_view` / `contrarian_view`, `signals.*`, `views.check_escalation` / `escalation`, `views.rebound` and `explain.reason`; their numbers must match `canary.sim`.
 - **Sound and stage:** `web/index.html`, `app.js`, `music.js`, `vendor/tone.js` exist; `score.js` to build.
 - Not built: `data/reasons.json` and `scripts/pregenerate_reasons.py` (Claude lines are optional; templates are used without them).
 
@@ -23,7 +23,7 @@ Layout below is the target.
 
 ## The four rules
 
-1. **Numbers decide, Claude explains.** Every stance, risk score, alert and action comes from pure functions in `desk/signals.py` and `desk/views.py`. Claude only writes a one-line reason, attached *after* the view is computed. No model output ever reaches a stance, alert or action.
+1. **Numbers decide, Claude explains.** Every stance, risk score, alert and action comes from pure functions in `canary/signals.py` and `canary/views.py`. Claude only writes a one-line reason, attached *after* the view is computed. No model output ever reaches a stance, alert or action.
 2. **Correlation is harmony.** One number, `unison`, pulls every part toward the same note, melody and rhythm.
 3. **No hub.** Agents broadcast over UDP on localhost. Every analyst computes the risk score itself. The relay only listens, displays and forwards human decisions; killing it changes nothing for the agents.
 4. **Nothing at demo time touches the network.** Cached CSV, vendored Tone.js, pre-generated reason lines.
@@ -35,6 +35,7 @@ Layout below is the target.
 - Lead time is only what `scripts/measure.py` prints (table in `docs/DESIGN.md`). Say: ahead of a 7.5–10% stop, **behind** a tight 5% stop. Cards on 8 Jan and 31 Jan are **false alarms**; call them that. Thresholds were tuned on 2020.
 - Run 2024-07-01 to 2024-08-30 (yen unwind) with the **same thresholds** and report whatever it shows, including "no card". **Result:** no early warning. The only card is 22 Aug, 13 trading days *after* the 5 Aug low; no stop fired (the commodity basket fell only 3.2%). Say: "Same thresholds on 2024: no early warning. That crash was in the yen, not commodity currencies."
 - High unison means "everything moved together against the dollar", not "crash": late August 2024 reaches full unison because the dollar weakened across the board.
+- **Other crises, same thresholds** (`python scripts/measure.py`): the band merges in every one (peak correlation 0.79 in 2008, 0.84 in 2022, 0.79 in 2024), but early warning **does not generalise**. 2008: card 8 Aug, between the 5% and 7.5% stops (no lead). 2022: no card at all (risk stayed high all through the dollar rally). Say: "We tried three other crises. You can hear the correlation in all of them; the early warning only worked in 2020, the year we tuned on. That's why we don't claim prediction."
 - Lead with the sound of unison, not the lead-time number. Re-run `measure.py` after any code change and update the table if numbers move.
 
 ## Architecture
@@ -71,6 +72,7 @@ Messages are small JSON datagrams with a `type`: `tick`, `view`, `hb`, `control`
 
 Field ranges: `stance` −1..1, `conviction` 0..1, `stress` 0..1, `risk` 0..1, `unison` 0..1.
 - `about`: which group the stance is about. Same as `slice`, except the contrarian names the group it bets against (needed for votes). From `views.slice_view` / `contrarian_view`.
+- `risk`: `null` in the first `view` an analyst sends each day (views go out at once so peers can use them; risk follows 250 ms later in a second `view`). Always use the latest `view` per agent and date.
 - `rebound`: true on rebound days (plays the rebound solo). From `views.rebound(prices)`.
 - `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`.
 - `reason`: from `explain.reason(view, date, cache)`.
@@ -83,7 +85,7 @@ canary/
 ├── CLAUDE.md  README.md
 ├── docs/DESIGN.md
 ├── data/        fx_daily.csv, reasons.json, decisions.jsonl (runtime, gitignored)
-├── desk/        signals.py views.py sim.py explain.py   (Quant)
+├── canary/        signals.py views.py sim.py explain.py   (Quant)
 │                bus.py agent.py tape.py relay.py run.py (Systems)
 ├── scripts/     measure.py pregenerate_reasons.py       (Quant)
 ├── tests/       pytest: signals, views, takeover ring, dedupe
@@ -94,8 +96,8 @@ canary/
 
 | Person | Owns |
 |---|---|
-| **Quant** | `desk/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/*`, `data/*`, Claude lines, honest-claims table, tests for these |
-| **Systems** | `desk/bus.py`, `agent.py`, `tape.py`, `relay.py`, `run.py`, trust, takeover, reconnect, dedupe, decision log, tests for these |
+| **Quant** | `canary/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/*`, `data/*`, Claude lines, honest-claims table, tests for these |
+| **Systems** | `canary/bus.py`, `agent.py`, `tape.py`, `relay.py`, `run.py`, trust, takeover, reconnect, dedupe, decision log, tests for these |
 | **Sound and stage** | `web/*`, pitch, backup video |
 
 Need a change in someone else's file? Ask them (or open a small PR for them to approve). Shared files (`CLAUDE.md`, `docs/DESIGN.md`, `README.md`): tell the team in chat before editing.
@@ -140,7 +142,7 @@ One instrument per **analyst**, not per slice; that is what makes a takeover aud
 - Python: Google-style docstrings (Args / Returns / Raises) on every module, class and function; type hints throughout. Write them as you go.
 - JS: JSDoc on every function.
 - `signals.py` and `views.py` are pure and covered by pytest, as are the takeover ring and escalation dedupe.
-- Python tooling (dev only, `requirements-dev.txt`): `black` formatting and `mypy` in strict mode (config in `pyproject.toml`). Run `black . && mypy desk tests scripts && pytest` before merging.
+- Python tooling (dev only, `requirements-dev.txt`): `black` formatting and `mypy` in strict mode (config in `pyproject.toml`). Run `black . && mypy canary tests scripts && pytest` before merging.
 - Claude lines use `claude-haiku-5-5`; API key in `.env`, **never committed** (keep `.env` in `.gitignore`).
 
 ## Git workflow
@@ -154,10 +156,10 @@ One instrument per **analyst**, not per slice; that is what makes a takeover aud
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt  # once
-python -m desk.run                    # start everything, open http://localhost:8000
-python -m desk.sim --replay 2020      # offline replay, prints every day and card
+python -m canary.run                    # start everything, open http://localhost:8000
+python -m canary.sim --replay 2020      # offline replay, prints every day and card
 python scripts/measure.py             # lead-time table, 2020 and 2024
 python scripts/fetch_fx.py            # re-download data/fx_daily.csv (needs internet; not at demo time)
 python scripts/pregenerate_reasons.py # optional, not built yet; needs ANTHROPIC_API_KEY
-black . && mypy desk tests scripts && pytest
+black . && mypy canary tests scripts && pytest
 ```

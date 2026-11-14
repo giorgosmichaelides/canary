@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal, TypedDict
 
-from desk.signals import (
+from canary.signals import (
     RISK_BASKET,
     basket,
     clamp,
