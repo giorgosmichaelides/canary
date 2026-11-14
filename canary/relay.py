@@ -8,6 +8,9 @@ HTTP on http://localhost:8000:
     GET  /events      server-sent events: every bus message as JSON, plus one
                       {"type": "card", "card": {...}, "opened_at": ...} per
                       escalation id, however many analysts raise it
+    GET  /history     {"events": [...]}: the current replay's ticks, card events
+                      and decisions, oldest first, so a page that connects late
+                      (or reloads) can redraw the chart from day 0
     POST /control     {"cmd": "kill", "target": "fx"} -> put on the bus
                       {"cmd": "restart", "replay": "2008"} switches crisis
     POST /decision    {"id": "2020:2020-03-02", "verdict": "approve" | "veto",
@@ -45,6 +48,7 @@ DECISIONS_FILE = ROOT / "data" / "decisions.jsonl"
 CONTROL_COMMANDS = ("play", "pause", "restart", "kill", "degrade", "heal", "revive")
 VERDICTS = ("approve", "veto")
 KEEPALIVE_SECONDS = 15.0
+HISTORY_LIMIT = 1000  # the longest replay (2008) is 126 ticks
 
 Message = dict[str, Any]
 
@@ -189,6 +193,7 @@ class Relay:
         self.lock = threading.Lock()
         self.clients: list[queue.Queue[Message]] = []
         self.latest: dict[tuple[str, str], Message] = {}
+        self.history: list[Message] = []
 
     def listen(self) -> None:
         """Forward every bus message to the browsers. Runs forever on its own thread."""
@@ -196,18 +201,56 @@ class Relay:
             msg = self.bus.recv(timeout=1.0)
             if msg is None:
                 continue
-            with self.lock:
-                card = self.cards.see(msg, time.monotonic(), time.time())
-                if msg.get("type") in ("view", "hb") and "agent" in msg:
-                    self.latest[(str(msg["type"]), str(msg["agent"]))] = msg
-            self.broadcast(msg)
-            if card is not None:
-                print(
-                    f"relay: card {card['card'].get('id')}, pausing the tape",
-                    flush=True,
-                )
-                self.bus.send({"type": "control", "cmd": "pause", "target": "tape"})
-                self.broadcast(card)
+            self.see(msg)
+
+    def see(self, msg: Message) -> None:
+        """Handle one bus message: dedupe cards, remember it, forward it.
+
+        Args:
+            msg: Any bus message.
+        """
+        with self.lock:
+            card = self.cards.see(msg, time.monotonic(), time.time())
+            if msg.get("type") in ("view", "hb") and "agent" in msg:
+                self.latest[(str(msg["type"]), str(msg["agent"]))] = msg
+            self.remember(msg, card)
+        self.broadcast(msg)
+        if card is not None:
+            print(
+                f"relay: card {card['card'].get('id')}, pausing the tape",
+                flush=True,
+            )
+            self.bus.send({"type": "control", "cmd": "pause", "target": "tape"})
+            self.broadcast(card)
+
+    def remember(self, msg: Message, card: Optional[Message]) -> None:
+        """Keep the current replay's ticks, card events and decisions for /history.
+
+        Call with the lock held. A tick for day 0 starts a new history.
+
+        Args:
+            msg: The bus message just seen.
+            card: The card event it opened, if any.
+        """
+        kind = msg.get("type")
+        if kind == "tick":
+            if msg.get("i") == 0:
+                self.history.clear()
+            self.history.append(msg)
+        elif kind == "decision":
+            self.history.append(msg)
+        if card is not None:
+            self.history.append(card)
+        del self.history[:-HISTORY_LIMIT]
+
+    def history_snapshot(self) -> list[Message]:
+        """The current replay so far, oldest first.
+
+        Returns:
+            Ticks, card events and decisions since the replay last started.
+        """
+        with self.lock:
+            return list(self.history)
 
     def broadcast(self, msg: Message) -> None:
         """Queue a message for every connected browser, dropping any that fell behind.
@@ -305,9 +348,12 @@ class Handler(SimpleHTTPRequestHandler):
     relay: Relay
 
     def do_GET(self) -> None:
-        """Serve /events as a stream, anything else as a file from web/."""
-        if self.path.split("?")[0] == "/events":
+        """Serve /events as a stream, /history as JSON, anything else as a file from web/."""
+        path = self.path.split("?")[0]
+        if path == "/events":
             self.stream_events()
+        elif path == "/history":
+            self.send_json(200, {"events": self.relay.history_snapshot()})
         else:
             super().do_GET()
 

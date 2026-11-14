@@ -108,3 +108,30 @@ def test_unknown_crisis_or_replay_on_other_commands_is_refused(tmp_path: Path) -
         relay.control({"cmd": "restart", "replay": "1929"})
     with pytest.raises(DecisionError):
         relay.control({"cmd": "kill", "target": "fx", "replay": "2008"})
+
+
+def tick(i: int, date: str) -> dict[str, Any]:
+    return {"type": "tick", "replay": "2020", "i": i, "date": date, "prices": {}}
+
+
+def test_history_keeps_ticks_cards_and_decisions_but_not_views(tmp_path: Path) -> None:
+    """A page that loads late can redraw the chart, card and decision from day 0."""
+    bus = _SentBus()
+    relay = Relay(cast(Bus, bus), tmp_path / "decisions.jsonl")
+    relay.see(tick(0, "2020-02-03"))
+    relay.see(tick(1, "2020-02-04"))
+    relay.see(view("fx"))
+    relay.see(view("havens"))
+    relay.decide({"id": CARD["id"], "verdict": "approve", "by": "Judge"})
+    relay.see(bus.sent[-2])  # the decision comes back over the bus
+    kinds = [m["type"] for m in relay.history_snapshot()]
+    assert kinds == ["tick", "tick", "card", "decision"]
+    assert {"type": "control", "cmd": "pause", "target": "tape"} in bus.sent
+
+
+def test_history_starts_again_when_the_replay_restarts(tmp_path: Path) -> None:
+    relay = Relay(cast(Bus, _SentBus()), tmp_path / "decisions.jsonl")
+    relay.see(tick(0, "2020-02-03"))
+    relay.see(tick(1, "2020-02-04"))
+    relay.see(tick(0, "2008-07-01"))
+    assert [m["date"] for m in relay.history_snapshot()] == ["2008-07-01"]

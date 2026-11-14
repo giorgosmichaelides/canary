@@ -88,6 +88,7 @@ The browser only talks to the relay, at `http://localhost:8000`:
 |---|---|---|
 | GET | `/` | `web/` files |
 | GET | `/events` | Server-sent events. Every bus message as JSON, plus `card` events. On connect, catch-up: latest `view` and `hb` per analyst, and any open card |
+| GET | `/history` | `{"events": [...]}`: the current replay's `tick`, `card` and `decision` messages from day 0, oldest first. The chart fetches it on connect so a late or reloaded page still has every day |
 | POST | `/control` | `{"cmd": "kill", "target": "fx"}`. `cmd`: play, pause, restart, kill, degrade, heal, revive. `target`: an analyst, or `"tape"`; revive also takes `"relay"` |
 | POST | `/decision` | `{"id": "2020:2020-03-02", "verdict": "approve" \| "veto", "reason": "...", "by": "Judge name"}`. Veto needs a reason (400 otherwise); a card that isn't open gets 409 |
 

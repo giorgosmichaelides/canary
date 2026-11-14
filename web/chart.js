@@ -952,14 +952,35 @@
 
   window.CanaryChart = { handle };
   scheduleDraw();
-  if (typeof EventSource !== "undefined" && location.protocol.startsWith("http")) {
+  // Live only: with ?mock, app.js feeds the recording in through handle().
+  const live = location.protocol.startsWith("http") && !new URLSearchParams(location.search).has("mock");
+  if (typeof EventSource !== "undefined" && live) {
     const source = new EventSource("/events");
+    // Live events wait here until /history (the replay so far) has been applied.
+    let pending = [];
     source.onmessage = (e) => {
+      let msg;
       try {
-        handle(JSON.parse(e.data));
+        msg = JSON.parse(e.data);
       } catch (err) {
         console.warn("chart: bad event", err);
+        return;
       }
+      if (pending) pending.push(msg);
+      else handle(msg);
+    };
+    // Fetch the history once the stream is open, so nothing falls between the two.
+    source.onopen = () => {
+      if (!pending) return;
+      fetch("/history")
+        .then((r) => (r.ok ? r.json() : { events: [] }))
+        .catch(() => ({ events: [] }))
+        .then((h) => {
+          for (const m of h.events || []) handle(m);
+          const later = pending;
+          pending = null;
+          for (const m of later) handle(m);
+        });
     };
   }
 })();
