@@ -66,16 +66,17 @@ Messages are small JSON datagrams with a `type`: `tick`, `view`, `hb`, `control`
  "views":[{"slice":"havens","by":"havens","about":"havens","ts":1794667969.5,"stance":0.92,"conviction":1.0,"stress":0.4,"reason":"..."},
           {"slice":"fx","by":"havens","about":"fx","ts":1794667969.5,"stance":0.51,"conviction":0.5,"stress":0.2,"reason":"Covering fx. ..."}],
  "escalation": {"id":"2020:2020-03-02","date":"2020-03-02","risk":0.64,
-                "rule":"Risk 0.64 >= 0.50 for 2 days in a row","action":"Cut commodity by 30%",
+                "rule":"Risk 0.64 ≥ 0.50 for 2 days in a row","action":"Cut commodity by 30%",
                 "slice":"commodity","cut":0.3,
-                "votes":[{"slice":"fx","by":"fx","vote":"dissent"}, "..."]}}
+                "votes":[{"slice":"fx","by":"fx","vote":"dissent"}, "..."],
+                "why":{"divergence":0.67,"unison":0.31,"drawdown":-0.052}}}
 ```
 
 Field ranges: `stance` −1..1, `conviction` 0..1, `stress` 0..1, `risk` 0..1, `unison` 0..1.
 - `about`: which group the stance is about. Same as `slice`, except the contrarian names the group it bets against (needed for votes). From `views.slice_view` / `contrarian_view`.
 - `risk`: `null` in the first `view` an analyst sends each day (views go out at once so peers can use them; risk follows 250 ms later in a second `view`). Always use the latest `view` per agent and date.
 - `rebound`: true on rebound days (plays the rebound solo). From `views.rebound(prices)`.
-- `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`.
+- `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`; `why` holds the risk inputs so the card can show `risk = 0.8 × max(divergence, unison) + 0.2 × (fall ÷ 10%)`.
 - `reason`: from `explain.reason(view, date, cache)`.
 **Anyone changing `view` fields must tell the team first**, and update this section in the same commit. Agree the fields in hour 1.
 

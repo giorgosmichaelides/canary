@@ -119,7 +119,7 @@ Model `claude-haiku-5-5`, short timeout, no retries. System prompt: persona plus
 - **Start audio** button before anything plays.
 - **Score:** scrolling canvas, one staff per analyst, one note per opinion per day. Height = stance, opacity = conviction, colour = author, ring = covered by a neighbour. Risk staff is a bar. Dashed lines for escalation and decision. Click a note: date, author, numbers, reason.
 - **Side panel:** meters for correlation, risk (0.50 marked), tempo; per analyst status (live / covering / down / isolated), trust bar, Kill / Degrade / Revive; decision log; desk log. Keys `K` kill fx, `R` revive fx.
-- **Card:** proposed action in large type; rule and numbers (*Decided by code*); each analyst's one-liner with support / neutral / dissent chip (*Explained by AI*); reason field; Approve / Veto (veto needs a reason); open-for timer. Replay pauses and music ducks until a decision. No auto-approve.
+- **Card:** proposed action in large type; rule and numbers (*Decided by code*); each analyst's one-liner with support / neutral / dissent chip (*In plain words*; say *Explained by AI* only when the lines come from Claude via `data/reasons.json`, which is not generated yet); the risk formula with its numbers (`escalation.why`); reason field; Approve / Veto (veto needs a reason); open-for timer. Replay pauses and music ducks until a decision. No auto-approve.
 - **Footer:** "Historical replay of a hypothetical portfolio, for demonstration only."
 
 ## 8. Done-when per person

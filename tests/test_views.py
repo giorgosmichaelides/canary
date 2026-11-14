@@ -6,6 +6,7 @@ import pytest
 
 from canary.views import (
     EscalationState,
+    RiskInputs,
     View,
     check_escalation,
     contrarian_view,
@@ -238,7 +239,10 @@ def test_proposed_cut_needs_a_holding() -> None:
 def test_escalation_builds_the_card() -> None:
     """The card has a stable id, a readable action and one vote per view."""
     views = [make_view("fx", 0.5), make_view("commodity", -0.4)]
-    card = escalation("2020", "2020-03-02", 0.64, views)
+    why: RiskInputs = {"divergence": 0.67, "unison": 0.31, "drawdown": -0.052}
+    card = escalation("2020", "2020-03-02", 0.64, views, why)
     assert card["id"] == "2020:2020-03-02"
     assert card["action"] == "Cut commodity by 30%"
+    assert card["rule"] == "Risk 0.64 ≥ 0.50 for 2 days in a row"
+    assert card["why"] == why
     assert [v["vote"] for v in card["votes"]] == ["dissent", "support"]
