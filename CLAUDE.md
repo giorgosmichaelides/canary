@@ -7,7 +7,8 @@ This file is the source of truth. Long detail (formulas, protocol, demo script, 
 ## Current status
 
 - **Quant: done.** `data/fx_daily.csv` (cached), `canary/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/fetch_fx.py`, `scripts/measure.py`, tests in `tests/`. `python -m canary.sim --replay 2020` reproduces the demo (card on 2 Mar, rebounds 3–4 and 25–26 Mar).
-- **Systems:** `canary/bus.py` done; `agent.py`, `tape.py`, `relay.py`, `run.py` to build. Agents should call `views.slice_view` / `contrarian_view`, `signals.*`, `views.check_escalation` / `escalation`, `views.rebound` and `explain.reason`; their numbers must match `canary.sim`.
+- **Systems: done.** `canary/bus.py`, `tape.py`, `agent.py`, `relay.py`, `run.py`; tests in `tests/test_agent.py`, `test_relay.py`. `python -m canary.run` starts everything. With all analysts alive, live risk, unison, stances and rebounds match `canary.sim` exactly, and all four raise the 2 Mar card. Killing fx: havens covers in 2.5 s; revive hands it back. Killing the relay changes nothing for the agents. Browser contract below.
+- **Open issue (killing on 24 Feb):** fx or contrarian: card unchanged (2 Mar, 30%). havens (covered by commodity): card on **28 Feb, 50%**. commodity (covered by contrarian): **no card before the low** (risk peaks 0.45 by 6 Mar), because the contrarian reads the crashed commodity slice as bullish, which cancels the divergence. Until the team decides whether covering should use the slice's own temperament for risk, **only kill fx on stage**.
 - **Sound and stage:** `web/index.html`, `app.js`, `music.js`, `vendor/tone.js` exist; `score.js` to build.
 - Not built: `data/reasons.json` and `scripts/pregenerate_reasons.py` (Claude lines are optional; templates are used without them).
 
@@ -77,6 +78,29 @@ Field ranges: `stance` −1..1, `conviction` 0..1, `stress` 0..1, `risk` 0..1, `
 - `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`.
 - `reason`: from `explain.reason(view, date, cache)`.
 **Anyone changing `view` fields must tell the team first**, and update this section in the same commit. Agree the fields in hour 1.
+
+## The browser contract (relay, shared with Sound)
+
+The browser only talks to the relay, at `http://localhost:8000`:
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/` | `web/` files |
+| GET | `/events` | Server-sent events. Every bus message as JSON, plus `card` events. On connect, catch-up: latest `view` and `hb` per analyst, and any open card |
+| POST | `/control` | `{"cmd": "kill", "target": "fx"}`. `cmd`: play, pause, restart, kill, degrade, heal, revive. `target`: an analyst, or `"tape"`; revive also takes `"relay"` |
+| POST | `/decision` | `{"id": "2020:2020-03-02", "verdict": "approve" \| "veto", "reason": "...", "by": "Judge name"}`. Veto needs a reason (400 otherwise); a card that isn't open gets 409 |
+
+```js
+const events = new EventSource("/events");
+events.onmessage = (e) => { const m = JSON.parse(e.data); /* switch on m.type */ };
+```
+
+- **Show the card on `{"type":"card","card":{...escalation},"opened_at":<unix s>}`**, which comes once per card id. Don't use the `escalation` field in views for this; four analysts repeat it every second until it's decided.
+- The relay pauses the tape when a card opens and presses play when the last open card is decided. The browser only ducks the music.
+- After a decision a `{"type":"decision", ...record}` message arrives. The record (also appended to `data/decisions.jsonl`) is `{id, verdict, reason, by, action, market_date, decided_at, seconds_to_decide}`.
+- `hb` (every 0.5 s per analyst): `{"type":"hb","agent","ts","covering":[...],"isolated":bool}`. Status: no `hb` for 3 s = **down**, `covering` non-empty = **covering**, `isolated` = **isolated**, otherwise **live**.
+- `tick`: `{"type":"tick","replay","i","date","prices":{...},"synthetic":bool}`. Show "SYNTHETIC DATA" when `synthetic` is true. `i == 0` means the replay (re)started.
+- `log`: `{"type":"log","agent","text"}` for the desk log (agents, tape and launcher all send these).
 
 ## Layout (target)
 
@@ -155,8 +179,11 @@ One instrument per **analyst**, not per slice; that is what makes a takeover aud
 ## Commands
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt  # once
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt  # once; python3 must be 3.11+ (on a Mac with 3.9, use python3.13)
 python -m canary.run                    # start everything, open http://localhost:8000
+python -m canary.run --paused           # demo: replay waits for play (after Start audio)
+python -m canary.run --interval 0.5 --no-browser   # fast run for testing
+python -m canary.bus check              # does multicast work on this machine?
 python -m canary.sim --replay 2020      # offline replay, prints every day and card
 python scripts/measure.py             # lead-time table, 2020 and 2024
 python scripts/fetch_fx.py            # re-download data/fx_daily.csv (needs internet; not at demo time)

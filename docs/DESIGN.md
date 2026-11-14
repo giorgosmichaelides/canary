@@ -77,7 +77,7 @@ As implemented: only fx, havens and commodity can be cut (the contrarian's slice
 
 Every analyst evaluates this rule and, when it fires, includes `escalation` with `id = "<replay>:<date>"` in its view. The relay shows one card per id, so if any analyst is alive the card appears.
 
-**Decision record** (JSON lines, appended by relay and broadcast): `{id, verdict, reason, action, market_date, decided_at, seconds_to_decide}`.
+**Decision record** (JSON lines, appended by relay and broadcast): `{id, verdict, reason, by, action, market_date, decided_at, seconds_to_decide}`. `by` is the name the decider typed, for the named human decision.
 
 ## 5. Agent protocol
 
@@ -85,11 +85,11 @@ Agents never reply to each other; they only broadcast.
 
 | type | Sender | Key fields |
 |---|---|---|
-| `tick` | tape | `i, date, prices` |
-| `view` | analyst | `agent, ts, date, views[], covering[], risk, unison, escalation?` |
-| `hb` | analyst | `agent, ts, covering[]` (every 0.5 s, independent of tape) |
+| `tick` | tape | `replay, i, date, prices, synthetic` |
+| `view` | analyst | `agent, ts, date, views[], covering[], risk, unison, rebound, escalation?` |
+| `hb` | analyst | `agent, ts, covering[], isolated` (every 0.5 s, independent of tape) |
 | `control` | relay | `cmd` (play, pause, restart, kill, degrade, heal, revive), `target` |
-| `decision` | relay | `id, verdict, reason, seconds_to_decide` |
+| `decision` | relay | the decision record above |
 | `reason` | analyst | `by, slice, date, text` (late line from a live Claude call) |
 | `log` | any | `agent, text` |
 
