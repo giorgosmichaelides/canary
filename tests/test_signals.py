@@ -14,6 +14,7 @@ from desk.signals import (
     basket,
     divergence,
     risk_score,
+    zscore,
 )
 
 
@@ -167,3 +168,24 @@ def test_risk_score_mixes_signals() -> None:
 def test_risk_score_is_capped_at_one() -> None:
     """Full unison plus a 17% fall would be 1.14, so it caps at 1."""
     assert risk_score(1.0, 1.0, -0.17) == 1.0
+
+
+def test_zscore_flags_an_unusually_high_value() -> None:
+    """A jump to 5 after four 1s is well above normal."""
+    assert zscore([1.0, 1.0, 1.0, 1.0, 5.0]) > 1.5
+
+
+def test_zscore_flags_an_unusually_low_value() -> None:
+    """A drop to 1 after four 5s is well below normal."""
+    assert zscore([5.0, 5.0, 5.0, 5.0, 1.0]) < -1.5
+
+
+def test_zscore_is_zero_when_nothing_changes() -> None:
+    """Flat values must not crash with a divide by zero."""
+    assert zscore([2.0, 2.0, 2.0]) == 0.0
+
+
+def test_zscore_needs_two_values() -> None:
+    """One value has no spread, so it raises."""
+    with pytest.raises(ValueError):
+        zscore([1.0])

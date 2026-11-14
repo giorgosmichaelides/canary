@@ -223,3 +223,24 @@ def risk_score(div_score: float, unison_score: float, basket_drawdown: float) ->
     """
     fall = -basket_drawdown / DRAWDOWN_SCALE
     return clamp(0.8 * max(div_score, unison_score) + 0.2 * fall, 0.0, 1.0)
+
+
+def zscore(values: list[float]) -> float:
+    """How unusual the latest value is compared with the whole list.
+
+    Measured in standard deviations from the list's average.
+    Example: -2.0 means the latest value is unusually low.
+
+    Args:
+        values: Values in date order, oldest first, e.g. the last 20 prices.
+
+    Returns:
+        (latest - mean) / standard deviation, or 0.0 if values never change.
+
+    Raises:
+        ValueError: If there are fewer than 2 values.
+    """
+    spread = statistics.stdev(values)
+    if spread == 0:
+        return 0.0  # nothing ever changes, so nothing is unusual
+    return (values[-1] - statistics.mean(values)) / spread
