@@ -18,6 +18,10 @@
   const RISK_BASKET = ["AUD", "CAD", "NOK"];
   /** The three holdings of the hypothetical portfolio (equal thirds), as in canary.views.SLICES. */
   const HOLDINGS = { fx: ["EUR", "GBP"], havens: ["JPY", "CHF"], commodity: ["AUD", "CAD", "NOK"] };
+  /** All seven currencies, grouped by slice, for the heatmap. */
+  const CURRENCIES = ["EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NOK"];
+  /** Days of returns per correlation (canary.signals.CORRELATION_WINDOW, locked). */
+  const CORR_WINDOW = 10;
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   /** Colours by role (dark page). Series pair validated on #0b0d12 with the dataviz validator. */
@@ -78,6 +82,14 @@
     .cc table { border-collapse: collapse; margin-top: 4px; font-variant-numeric: tabular-nums; }
     .cc th, .cc td { padding: 2px 10px 2px 0; text-align: right; }
     .cc th:first-child, .cc td:first-child, .cc td:last-child { text-align: left; }
+    .cc .heat { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
+    .cc .heat h3 { margin: 0 0 2px; font-size: 14px; color: ${C.ink}; }
+    .cc .heat .grid { display: grid; grid-template-columns: 36px repeat(7, minmax(22px, 40px)); gap: 2px; margin-top: 8px; }
+    .cc .heat .cell { aspect-ratio: 1; border-radius: 4px; }
+    .cc .heat .lab { color: ${C.muted}; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+    .cc .heat .scale { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: ${C.muted}; font-size: 11px; }
+    .cc .heat .bar { width: 160px; height: 8px; border-radius: 4px;
+      background: linear-gradient(90deg, ${C.price}, #3a3a37 50%, ${C.unison}); }
     .cc .report { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .cc .report h3 { margin: 0 0 6px; font-size: 14px; color: ${C.ink}; }
     .cc .report ul { margin: 0; padding-left: 18px; line-height: 1.5; }
@@ -106,7 +118,44 @@
   report.className = "report";
   report.hidden = true;
   report.setAttribute("aria-live", "polite");
-  root.append(title, sub, wrap, details, report);
+  const heat = el("section");
+  heat.className = "heat";
+  const heatTitle = el("h3", "Which currencies move together");
+  const heatSub = el("p", "Correlation of daily moves over the last 10 days. Fills in from the 11th day of the replay.");
+  heatSub.className = "sub";
+  const grid = el("div");
+  grid.className = "grid";
+  grid.setAttribute("role", "table");
+  grid.setAttribute("aria-label", "Correlation between each pair of currencies");
+  const cells = [];
+  grid.append(el("div"));
+  for (const c of CURRENCIES) {
+    const lab = el("div", c);
+    lab.className = "lab";
+    grid.append(lab);
+  }
+  for (const a of CURRENCIES) {
+    const lab = el("div", a);
+    lab.className = "lab";
+    grid.append(lab);
+    const row = [];
+    for (const b of CURRENCIES) {
+      const cell = el("div");
+      cell.className = "cell";
+      cell.setAttribute("role", "cell");
+      cell.dataset.pair = `${a}–${b}`;
+      grid.append(cell);
+      row.push(cell);
+    }
+    cells.push(row);
+  }
+  const scale = el("div");
+  scale.className = "scale";
+  const bar = el("span");
+  bar.className = "bar";
+  scale.append(el("span", "−1 opposite"), bar, el("span", "+1 together"));
+  heat.append(heatTitle, heatSub, grid, scale);
+  root.append(title, sub, wrap, details, heat, report);
 
   /**
    * Make an element with optional text (never HTML).
@@ -158,7 +207,7 @@
     }
     const hold = (holdings.fx + holdings.havens + holdings.commodity) / 3;
     const day = state.days[i] || { unison: null, risk: null, rebound: false };
-    Object.assign(day, { i, date: msg.date, index, holdings, hold });
+    Object.assign(day, { i, date: msg.date, index, holdings, hold, prices });
     state.days[i] = day;
     state.byDate[msg.date] = day;
   }
@@ -221,6 +270,76 @@
     return d.hold - (card.cut / 3) * (d.holdings[card.slice] - start.holdings[card.slice]);
   }
 
+  // ---------------------------------------------------------------- heatmap
+
+  /**
+   * Pearson correlation of two equal-length lists (0 if either never moves).
+   * @param {number[]} a First series.
+   * @param {number[]} b Second series.
+   * @returns {number} -1..1.
+   */
+  function pearson(a, b) {
+    const n = a.length;
+    const ma = a.reduce((s, v) => s + v, 0) / n;
+    const mb = b.reduce((s, v) => s + v, 0) / n;
+    let sab = 0, saa = 0, sbb = 0;
+    for (let k = 0; k < n; k++) {
+      sab += (a[k] - ma) * (b[k] - mb);
+      saa += (a[k] - ma) ** 2;
+      sbb += (b[k] - mb) ** 2;
+    }
+    return saa === 0 || sbb === 0 ? 0 : sab / Math.sqrt(saa * sbb);
+  }
+
+  /**
+   * Correlation of every currency pair over the 10 days up to day i.
+   * @param {number} i Day index.
+   * @returns {number[][]|null} 7x7 matrix, or null without 11 days of prices.
+   */
+  function corrMatrix(i) {
+    const span = [];
+    for (let k = i - CORR_WINDOW; k <= i; k++) {
+      if (!state.days[k] || !state.days[k].prices) return null;
+      span.push(state.days[k].prices);
+    }
+    const rets = CURRENCIES.map((c) => span.slice(1).map((p, k) => p[c] / span[k][c] - 1));
+    return rets.map((a) => rets.map((b) => pearson(a, b)));
+  }
+
+  /**
+   * Diverging colour: blue for -1, a neutral grey for 0, orange for +1.
+   * @param {number} v -1..1.
+   * @returns {string} CSS colour.
+   */
+  function divergingColor(v) {
+    const mid = [58, 58, 55];
+    const end = v >= 0 ? [217, 89, 38] : [57, 135, 229];
+    const t = Math.min(1, Math.abs(v));
+    const mix = mid.map((m, k) => Math.round(m + (end[k] - m) * t));
+    return `rgb(${mix.join(",")})`;
+  }
+
+  /** Paint the heatmap for the hovered day, or the latest one. @returns {void} */
+  function renderHeat() {
+    const days = state.days.filter(Boolean);
+    const day = state.hover !== null && state.days[state.hover] ? state.days[state.hover] : days[days.length - 1];
+    const m = day ? corrMatrix(day.i) : null;
+    if (!m) {
+      for (const row of cells) for (const cell of row) cell.style.background = "transparent";
+      return;
+    }
+    let sum = 0, pairs = 0;
+    CURRENCIES.forEach((a, r) => CURRENCIES.forEach((b, c) => {
+      const v = m[r][c];
+      const cell = cells[r][c];
+      // The diagonal is each currency with itself (always 1): keep it quiet.
+      cell.style.background = r === c ? "#1d2027" : divergingColor(v);
+      cell.title = r === c ? a : `${a} and ${b}: ${v.toFixed(2)}`;
+      if (c > r) { sum += v; pairs += 1; }
+    }));
+    heatSub.textContent = `${shortDate(day.date)}: average of the 21 pairs ${(sum / pairs).toFixed(2)}. Correlation of daily moves over the last 10 days; orange = moving together.`;
+  }
+
   // ---------------------------------------------------------------- drawing
 
   let drawQueued = false;
@@ -232,6 +351,7 @@
     requestAnimationFrame(() => {
       drawQueued = false;
       draw();
+      renderHeat();
       updateText();
     });
   }
@@ -628,6 +748,7 @@
   function setHover(i) {
     state.hover = i;
     draw();
+    renderHeat();
     const d = i === null ? null : state.days[i];
     if (!d) {
       tip.style.display = "none";
