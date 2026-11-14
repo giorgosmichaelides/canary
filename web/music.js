@@ -6,6 +6,11 @@
  * melody degrees shrink toward the root, off-beat steps drop out one by one
  * (per-step thresholds), and at unison 1 every voice plays D on the beat.
  *
+ * Per slice: stance bends the contour (up when bullish), conviction sets
+ * velocity, `by` picks the instrument (a covered slice is played by the
+ * coverer's instrument), and trust (view freshness) moves the instrument from
+ * dry to reverb. Events: escalation sting, approve/veto chords, rebound climb.
+ *
  * Exposes a single global: `Music`.
  */
 
@@ -55,6 +60,37 @@ const Music = (() => {
 
   /** Style waiting for the next bar line, or null. */
   let pendingStyle = null;
+
+  /** The four slices, which are also the four instrument names. */
+  const SLICES = ["fx", "havens", "commodity", "contrarian"];
+
+  /** How many scale degrees a stance of +/-1 bends the melody (before unison pulls it to D). */
+  const STANCE_SPAN = 2;
+
+  /** Latest author (`by`) per slice, and when its newest view arrived (performance.now() ms). */
+  const sliceBy = {};
+  const lastSeen = {};
+  let lastAnySeen = 0;
+
+  /** Trust per slice, 0..1, recomputed every frame from view freshness. */
+  const trust = {};
+
+  /** Latched at each bar line: who plays each slice, its stance, and the rebound flag. */
+  const barBy = {};
+  const barStance = {};
+  let barRebound = false;
+
+  /** Raw rebound flag from the latest view. */
+  let rebound = false;
+
+  /** Music bus (everything except event sounds; this is what ducks) and the trust reverb. */
+  let musicBus = null;
+  let trustReverb = null;
+
+  /** Event synths: escalation sting, approve/veto chord, rebound climb. */
+  let stingSynth = null;
+  let chordSynth = null;
+  let reboundSynth = null;
 
   /** True when the risk voice (drone and click) is muted from the page. */
   let riskMuted = false;
@@ -136,6 +172,47 @@ const Music = (() => {
     return Math.abs(next - goal) < 0.0005 ? goal : next;
   }
 
+  /**
+   * Trust of one slice from how far its newest view lags the freshest view of
+   * any slice (DESIGN.md: 1.0 for the first second, then halves every 0.8 s).
+   * Measured relative to the freshest view, so a paused replay (no views at
+   * all) does not fade everyone.
+   * @param {string} slice Slice name.
+   * @returns {number} Trust, 0..1.
+   */
+  function freshness(slice) {
+    if (lastSeen[slice] === undefined) return 1;
+    const lag = (lastAnySeen - lastSeen[slice]) / 1000;
+    return lag <= 1 ? 1 : 0.5 ** ((lag - 1) / 0.8);
+  }
+
+  /**
+   * Trust of an instrument: the lowest trust of the slices it is playing now
+   * (1 if it plays none).
+   * @param {string} name Instrument (analyst) name.
+   * @returns {number} Trust, 0..1.
+   */
+  function instrumentTrust(name) {
+    let t = 1;
+    for (const s of SLICES) if ((sliceBy[s] || s) === name) t = Math.min(t, trust[s] ?? 1);
+    return t;
+  }
+
+  /**
+   * Push trust to every built instrument: dry gain down, reverb send up.
+   * @returns {void}
+   */
+  function applyTrust() {
+    for (const set of Object.values(styles)) {
+      for (const [name, voice] of Object.entries(set)) {
+        if (!voice.dry) continue;
+        const t = instrumentTrust(name);
+        voice.dry.gain.rampTo(0.2 + 0.8 * t, 0.1);
+        voice.send.gain.rampTo(0.9 * (1 - t), 0.1);
+      }
+    }
+  }
+
   /** Frame period in ms, and how many frames between pushes of smoothed risk to the audio params. */
   const FRAME_MS = 16;
   const APPLY_EVERY = 4;
@@ -167,10 +244,14 @@ const Music = (() => {
         conviction: ease(cur.conviction, goal.conviction, dt),
       };
     }
+    for (const sl of SLICES) trust[sl] = ease(trust[sl] ?? 1, freshness(sl), dt);
     frameCount += 1;
-    if (frameCount % APPLY_EVERY === 0 && Math.abs(risk - lastAppliedRisk) > 0.0005) {
-      lastAppliedRisk = risk;
-      applyRisk();
+    if (frameCount % APPLY_EVERY === 0) {
+      if (Math.abs(risk - lastAppliedRisk) > 0.0005) {
+        lastAppliedRisk = risk;
+        applyRisk();
+      }
+      applyTrust();
     }
   }
   setInterval(frame, FRAME_MS);
@@ -347,13 +428,50 @@ const Music = (() => {
    * @param {Object} voice One entry of `voices`.
    * @param {number} step Sixteenth step 0-15.
    * @param {number} u Current unison, 0..1.
+   * @param {number} stance The slice's stance, -1..1 (bends the contour; unison still pulls it to D).
    * @returns {{play: boolean, degree: number, own: boolean}} What to do on this step.
    */
-  function decide(voice, step, u) {
+  function decide(voice, step, u, stance) {
     const own = u < voice.thresholds[step];
     const hits = own ? voice.rhythm.includes(step) : step % 4 === 0;
-    const degree = Math.round(voice.melody[step] * (1 - u));
+    const degree = Math.round((voice.melody[step] + STANCE_SPAN * stance) * (1 - u));
     return { play: hits, degree, own };
+  }
+
+  /**
+   * Connect a voice's synth through its own dry gain (to `dest`) and a reverb
+   * send (to the trust reverb), so trust can push it into the distance.
+   * @param {Object} voice One entry of a voice set.
+   * @param {Object} synth The Tone instrument.
+   * @param {Object} dest Where the dry signal goes (an effect chain or the music bus).
+   * @returns {void}
+   */
+  function wire(voice, synth, dest) {
+    voice.synth = synth;
+    voice.dry = new Tone.Gain(1).connect(dest);
+    voice.send = new Tone.Gain(0).connect(trustReverb);
+    synth.connect(voice.dry);
+    synth.connect(voice.send);
+  }
+
+  /**
+   * Wrap an instrument so any part can be played on it: chords collapse to
+   * their first note on a monophonic synth, and velocity is scaled by conviction.
+   * @param {Object} synth The Tone instrument that will sound.
+   * @param {number} gain Velocity multiplier (from conviction).
+   * @returns {{triggerAttackRelease: Function, triggerAttack: Function}} A synth-like object.
+   */
+  function player(synth, gain) {
+    const poly = synth instanceof Tone.PolySynth;
+    const fit = (notes) => (Array.isArray(notes) && !poly ? notes[0] : notes);
+    return {
+      triggerAttackRelease(notes, dur, time, vel = 1) {
+        synth.triggerAttackRelease(fit(notes), dur, time, vel * gain);
+      },
+      triggerAttack(notes, time, vel = 1) {
+        synth.triggerAttack(fit(notes), time, vel * gain);
+      },
+    };
   }
 
   /**
@@ -365,48 +483,48 @@ const Music = (() => {
     if (classicalBuilt) return;
     classicalBuilt = true;
     // Classical preset synths (all synthesised, no samples).
-    const hall = new Tone.Reverb({ decay: 5, wet: 0.45 }).toDestination();
+    const hall = new Tone.Reverb({ decay: 5, wet: 0.45 }).connect(musicBus);
     hallReverb = hall;
 
     // fx cello: bowed saw, slow attack, vibrato, warm low-pass, panned left.
     const cellovib = new Tone.Vibrato({ frequency: 5, depth: 0.12 }).connect(new Tone.Panner(-0.4).connect(hall));
-    classicalVoices.fx.synth = new Tone.MonoSynth({
+    wire(classicalVoices.fx, new Tone.MonoSynth({
       oscillator: { type: "sawtooth" },
       envelope: { attack: 0.35, decay: 0.3, sustain: 0.8, release: 0.9 },
       filter: { type: "lowpass", Q: 0.5 },
       filterEnvelope: { attack: 0.4, decay: 0.3, sustain: 0.6, baseFrequency: 110, octaves: 1.8 },
-    }).connect(cellovib);
+    }), cellovib);
     classicalVoices.fx.synth.volume.value = -2;
 
     // havens strings: detuned saws, very slow attack, dark filter, big reverb.
     const stringFilter = new Tone.Filter(3000, "lowpass").connect(hall);
     const stringVibrato = new Tone.Vibrato({ frequency: 5.5, depth: 0.1 }).connect(stringFilter);
-    classicalVoices.havens.synth = new Tone.PolySynth(Tone.Synth, {
+    wire(classicalVoices.havens, new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "fatsawtooth", count: 2, spread: 18 },
       envelope: { attack: 1.4, decay: 0.5, sustain: 0.85, release: 2.5 },
-    }).connect(stringVibrato);
+    }), stringVibrato);
     classicalVoices.havens.synth.volume.value = -16;
 
     // commodity piano: FM with a hammer-bright attack that mellows as it decays,
     // instant attack, no sustain (notes ring and die away), light room reverb, right.
-    const pianoOut = new Tone.Panner(0.3).toDestination();
+    const pianoOut = new Tone.Panner(0.3).connect(musicBus);
     pianoOut.connect(hall);
-    classicalVoices.commodity.synth = new Tone.PolySynth(Tone.FMSynth, {
+    wire(classicalVoices.commodity, new Tone.PolySynth(Tone.FMSynth, {
       harmonicity: 2.01,
       modulationIndex: 2.5,
       oscillator: { type: "sine" },
       envelope: { attack: 0.003, decay: 2.2, sustain: 0, release: 1.2 },
       modulation: { type: "triangle" },
       modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.05, release: 0.5 },
-    }).connect(pianoOut);
+    }), pianoOut);
     classicalVoices.commodity.synth.volume.value = -8;
 
     // contrarian pizzicato violin: bright, short Karplus-Strong pluck.
-    classicalVoices.contrarian.synth = new Tone.PluckSynth({
+    wire(classicalVoices.contrarian, new Tone.PluckSynth({
       attackNoise: 2,
       dampening: 5000,
       resonance: 0.85,
-    }).connect(new Tone.Panner(-0.3).connect(hall));
+    }), new Tone.Panner(-0.3).connect(hall));
     classicalVoices.contrarian.synth.volume.value = 2;
 
     for (const voice of Object.values(classicalVoices)) applyMute(voice);
@@ -419,49 +537,70 @@ const Music = (() => {
    */
   function build() {
     // Master safety: headroom plus a limiter so stacked voices cannot clip the output.
-    Tone.Destination.volume.value = ducked ? DUCK_DB : MASTER_DB;
+    Tone.Destination.volume.value = MASTER_DB;
     Tone.Destination.chain(new Tone.Limiter(-3));
 
-    const reverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
+    // Music bus (ducks under the card) and the reverb that untrusted voices drift into.
+    musicBus = new Tone.Gain(ducked ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1).toDestination();
+    trustReverb = new Tone.Reverb({ decay: 6, wet: 1 }).connect(musicBus);
+
+    // Event sounds go straight to the output, so they cut through the duck.
+    stingSynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.005, decay: 1.2, sustain: 0.25, release: 1.5 },
+    }).connect(new Tone.Filter(3200, "lowpass").toDestination());
+    stingSynth.volume.value = -14;
+    chordSynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.04, decay: 0.6, sustain: 0.6, release: 2.5 },
+    }).toDestination();
+    chordSynth.volume.value = -8;
+    reboundSynth = new Tone.Synth({
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.003, decay: 0.12, sustain: 0, release: 0.1 },
+    }).connect(musicBus);
+    reboundSynth.volume.value = -10;
+
+    const reverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).connect(musicBus);
 
     // fx: warm upright-style bass (triangle through a closing low-pass), panned left.
-    voices.fx.synth = new Tone.MonoSynth({
+    wire(voices.fx, new Tone.MonoSynth({
       oscillator: { type: "sawtooth" },
       envelope: { attack: 0.01, decay: 0.25, sustain: 0.6, release: 0.25 },
       filter: { type: "lowpass", Q: 1 },
       filterEnvelope: { attack: 0.005, decay: 0.25, sustain: 0.35, baseFrequency: 250, octaves: 2.5 },
-    }).connect(new Tone.Panner(-0.6).toDestination());
+    }), new Tone.Panner(-0.6).connect(musicBus));
     voices.fx.synth.volume.value = 2;
 
     // havens: wide, slow detuned pad with chorus and a long reverb, centred.
-    const padReverb = new Tone.Reverb({ decay: 6, wet: 0.5 }).toDestination();
+    const padReverb = new Tone.Reverb({ decay: 6, wet: 0.5 }).connect(musicBus);
     const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.7, wet: 0.6 }).start().connect(padReverb);
-    voices.havens.synth = new Tone.PolySynth(Tone.Synth, {
+    wire(voices.havens, new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "fatsine", count: 3, spread: 25 },
       envelope: { attack: 1.2, decay: 0.5, sustain: 0.8, release: 3 },
-    }).connect(chorus);
+    }), chorus);
     voices.havens.synth.volume.value = -9;
 
     // commodity: gritty distorted saw power chords, dark filter, panned right.
-    const crunchPan = new Tone.Panner(0.35).toDestination();
+    const crunchPan = new Tone.Panner(0.35).connect(musicBus);
     const crunchFilter = new Tone.Filter(2400, "lowpass").connect(crunchPan);
     const dist = new Tone.Distortion(0.6).connect(crunchFilter);
-    voices.commodity.synth = new Tone.PolySynth(Tone.Synth, {
+    wire(voices.commodity, new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "sawtooth" },
       envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.08 },
-    }).connect(dist);
+    }), dist);
     voices.commodity.synth.volume.value = -28;
 
     // contrarian: bright FM bell-pluck, panned left-ish into a ping-pong echo.
     const echo = new Tone.PingPongDelay({ delayTime: "8n.", feedback: 0.3, wet: 0.25 }).connect(reverb);
-    voices.contrarian.synth = new Tone.FMSynth({
+    wire(voices.contrarian, new Tone.FMSynth({
       harmonicity: 3.01,
       modulationIndex: 12,
       oscillator: { type: "sine" },
       envelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.2 },
       modulation: { type: "square" },
       modulationEnvelope: { attack: 0.002, decay: 0.15, sustain: 0, release: 0.1 },
-    }).connect(new Tone.Panner(-0.5).connect(echo));
+    }), new Tone.Panner(-0.5).connect(echo));
     voices.contrarian.synth.volume.value = -10;
 
     if (styleName === "classical") buildClassical();
@@ -471,28 +610,28 @@ const Music = (() => {
     arrivalSynth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "fatsawtooth", count: 2, spread: 20 },
       envelope: { attack: 0.01, decay: 0.4, sustain: 0.7, release: 1.5 },
-    }).connect(new Tone.Filter(2800, "lowpass").toDestination());
+    }).connect(new Tone.Filter(2800, "lowpass").connect(musicBus));
     arrivalSynth.volume.value = -16;
 
     // Risk voice: low D drone (D2 + D3, nothing below laptop-speaker range) and a click.
-    droneGain = new Tone.Gain(0).toDestination();
+    droneGain = new Tone.Gain(0).connect(musicBus);
     for (const midi of [38, 50]) {
       new Tone.Oscillator(Tone.Frequency(midi, "midi").toFrequency(), "sine").connect(droneGain).start();
     }
     // Tritone drone: G#2 and G#3 (a tritone above D), slowly pulsing, for unease.
-    tritoneGain = new Tone.Gain(0).toDestination();
+    tritoneGain = new Tone.Gain(0).connect(musicBus);
     const pulse = new Tone.Tremolo({ frequency: 0.35, depth: 0.7 }).connect(tritoneGain).start();
     for (const midi of [44, 56]) {
       new Tone.Oscillator(Tone.Frequency(midi, "midi").toFrequency(), "triangle").connect(pulse).start();
     }
     // Sub rumble: brown noise through a low-pass.
-    rumbleGain = new Tone.Gain(0).toDestination();
+    rumbleGain = new Tone.Gain(0).connect(musicBus);
     new Tone.Noise("brown").connect(new Tone.Filter(50, "highpass").connect(new Tone.Filter(160, "lowpass").connect(rumbleGain))).start();
     clickSynth = new Tone.MembraneSynth({
       pitchDecay: 0.008,
       octaves: 2,
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.02 },
-    }).toDestination();
+    }).connect(musicBus);
     clickSynth.volume.value = -6;
     applyRisk();
 
@@ -515,6 +654,13 @@ const Music = (() => {
         }
         unison = smoothUnison;
         Tone.Transport.swing = unison >= ARRIVAL ? 0 : swingByStyle[styleName] * (1 - unison);
+        // Who plays each slice and its contour only change here, so a takeover
+        // or a returning analyst comes in on the bar line.
+        for (const sl of SLICES) {
+          barBy[sl] = sliceBy[sl] || sl;
+          barStance[sl] = smoothViews[sl] ? smoothViews[sl].stance : 0;
+        }
+        barRebound = rebound;
       }
       const u = unison;
       const arrived = u >= ARRIVAL;
@@ -524,9 +670,21 @@ const Music = (() => {
       if (step % 4 === 0 && !riskMuted) {
         clickSynth.triggerAttackRelease("A5", "32n", time, 0.03 + 0.97 * risk ** 3);
       }
-      for (const voice of Object.values(styles[styleName])) {
-        const d = decide(voice, step, u);
-        if (d.play) voice.play(time, d.degree, d.own, step);
+      if (barRebound) {
+        // Rebound: a 16th-note pentatonic climb over two octaves (D4 to D6), ignoring unison.
+        const midi = degreeToMidi(62, Math.round((step * 10) / 15));
+        reboundSynth.triggerAttackRelease(Tone.Frequency(midi, "midi").toFrequency(), "16n", time, 0.5 + 0.4 * (step / 15));
+      }
+      const set = styles[styleName];
+      for (const sl of SLICES) {
+        const pattern = set[sl];
+        const instrument = set[barBy[sl]] || pattern;
+        if (!instrument.synth) continue;
+        const d = decide(pattern, step, u, barStance[sl]);
+        if (!d.play) continue;
+        const conviction = smoothViews[sl] ? smoothViews[sl].conviction : 1;
+        const synth = player(instrument.synth, 0.35 + 0.65 * conviction);
+        pattern.play.call({ ...pattern, synth }, time, d.degree, d.own, step);
       }
       step = (step + 1) % 16;
     }, "16n");
@@ -570,10 +728,60 @@ const Music = (() => {
    * @returns {void}
    */
   function setViews(views) {
+    const now = performance.now();
     for (const v of views) {
       targetViews[v.slice] = { stance: v.stance, conviction: v.conviction };
       if (!smoothViews[v.slice]) smoothViews[v.slice] = { stance: v.stance, conviction: v.conviction };
+      sliceBy[v.slice] = v.by || v.slice;
+      lastSeen[v.slice] = now;
     }
+    if (views.length) lastAnySeen = now;
+  }
+
+  /**
+   * Set the rebound flag from the latest view; the climb starts or stops at the next bar line.
+   * @param {boolean} on True on a rebound day.
+   * @returns {void}
+   */
+  function setRebound(on) {
+    rebound = Boolean(on);
+  }
+
+  /**
+   * Escalation sting: cluster C, D flat, F sharp, G over low D. Plays at once (not
+   * on the bar) and is not ducked.
+   * @returns {void}
+   */
+  function sting() {
+    if (!built) return;
+    stingSynth.triggerAttackRelease(toFreqs([38, 60, 61, 66, 67]), "2n", Tone.now() + 0.05, 0.9);
+  }
+
+  /**
+   * Decision sound: D major chord on approve, tritone on veto. Not ducked.
+   * @param {"approve"|"veto"} verdict The decision.
+   * @returns {void}
+   */
+  function decision(verdict) {
+    if (!built) return;
+    const notes = verdict === "approve" ? [50, 54, 57, 62] : [50, 56, 62, 68];
+    chordSynth.triggerAttackRelease(toFreqs(notes), "1n", Tone.now() + 0.05, 0.8);
+  }
+
+  /**
+   * Current trust per slice (smoothed), for the page's trust bars.
+   * @returns {Object<string, number>} Slice -> trust, 0..1.
+   */
+  function getTrust() {
+    return Object.fromEntries(SLICES.map((sl) => [sl, trust[sl] ?? 1]));
+  }
+
+  /**
+   * Current tempo in bpm (follows smoothed risk).
+   * @returns {number} Beats per minute.
+   */
+  function getTempo() {
+    return built ? Tone.Transport.bpm.value : riskToBpm(target.risk);
   }
 
   /**
@@ -659,8 +867,11 @@ const Music = (() => {
    */
   function setDuck(on) {
     ducked = on;
-    if (built) Tone.Destination.volume.rampTo(on ? DUCK_DB : MASTER_DB, 0.5);
+    if (built) musicBus.gain.rampTo(on ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1, 0.5);
   }
 
-  return { start, setUnison, setRisk, setViews, getSmoothed, setMute, setRiskMute, setStyle, setDuck };
+  return {
+    start, setUnison, setRisk, setViews, setRebound, getSmoothed, getTrust, getTempo,
+    sting, decision, setMute, setRiskMute, setStyle, setDuck,
+  };
 })();
