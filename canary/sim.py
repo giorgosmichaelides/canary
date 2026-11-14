@@ -73,6 +73,8 @@ REPLAYS: dict[str, Replay] = {
     "2024": Replay("2024", "2024-05-01", "2024-07-01", "2024-08-30"),
     "2008": Replay("2008", "2008-05-01", "2008-07-01", "2008-12-31"),
     "2022": Replay("2022", "2022-05-02", "2022-08-01", "2022-11-30"),
+    # The latest months (re-run scripts/fetch_fx.py to refresh before the demo).
+    "now": Replay("now", "2026-04-01", "2026-07-01", "2026-11-13"),
 }
 
 

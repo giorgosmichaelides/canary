@@ -13,7 +13,7 @@
   "use strict";
 
   /** Trading days in each replay window (from canary.sim.REPLAYS). */
-  const REPLAY_DAYS = { "2020": 48, "2024": 44, "2008": 126, "2022": 84 };
+  const REPLAY_DAYS = { "2020": 48, "2024": 44, "2008": 126, "2022": 84, now: 90 };
   /** The risk basket: commodity currencies, the first to fall in a panic. */
   const RISK_BASKET = ["AUD", "CAD", "NOK"];
   /** The three holdings of the hypothetical portfolio (equal thirds), as in canary.views.SLICES. */
@@ -23,7 +23,7 @@
   /** Days of returns per correlation (canary.signals.CORRELATION_WINDOW, locked). */
   const CORR_WINDOW = 10;
   /** The crises the picker offers (canary.sim.REPLAYS), with what happened. */
-  const CRISES = [["2008", "2008 · Lehman"], ["2020", "2020 · COVID"], ["2022", "2022 · Dollar spike"], ["2024", "2024 · Yen unwind"]];
+  const CRISES = [["2008", "2008 · Lehman"], ["2020", "2020 · COVID"], ["2022", "2022 · Dollar spike"], ["2024", "2024 · Yen unwind"], ["now", "Now · Jul–Nov 2026"]];
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   /** Colours by role (dark page). Series pair validated on #0b0d12 with the dataviz validator. */

@@ -48,6 +48,8 @@ False alarms in 2020: **8 Jan and 31 Jan**. Say so.
 
 **The honest summary:** the merging generalises across every crisis we tried; the early warning only worked in 2020, the year we tuned on. That's why we don't claim prediction.
 
+**Right now (Jul–Nov 2026, the `now` replay):** the band reaches full unison in late July and August (correlation 0.80), and cards fire on 28 Sep ("Cut commodity by 50%", risk 0.85) and 15 Oct. Frame it as "this is what the market sounds like right now", never as a forecast.
+
 ## Likely questions
 
 **"Does it predict crashes?"** No. Same data drives the chart and the music. It makes correlation audible. Early warning only worked in the year we tuned on, and we show the years it didn't.
