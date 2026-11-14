@@ -154,7 +154,7 @@ Blind test: press **B** on about 6 Feb to black out the screen (3 Feb has risk 0
 | Replay date | ~Seconds | What happens | What you say |
 |---|---|---|---|
 | 3–10 Feb | 0–12 | 3 Feb sounds tense for a few seconds, then settles. On about 6 Feb, screen black (B). Four separate, soft rhythms | "No charts. Calm or crash?" A judge clicks a guess and the screen reveals calm. Press B to close |
-| 10–21 Feb | 10–28 | Correlation 0.1–0.25; four rhythms, four registers | "Each analyst plays its own market. This is what diversification sounds like. Remember it." |
+| 11–21 Feb | 12–28 | Correlation 0.1–0.25; four rhythms, four registers | "Each analyst plays its own market. This is what diversification sounds like. Remember it." |
 | ~24–25 Feb | 30–32 | **Press K.** Fx fades into reverb, pad picks up the bass line; parts still distinct | "We just killed an analyst. Nobody told the others." |
 | 27–28 Feb | 34–38 | Havens bid, commodity FX sold; drone grows | "Money is moving to safety." |
 | 2 Mar | 38 | Sting, card: cut commodity FX 30%. Fx and contrarian dissent | Hand the mouse to a judge: "Approve or veto." Press R to revive fx while they read |
