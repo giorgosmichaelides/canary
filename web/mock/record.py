@@ -1,4 +1,4 @@
-"""Record a replay from desk.sim as browser-ready `view` messages.
+"""Record a replay from canary.sim as browser-ready `view` messages.
 
 Writes web/mock/replay<year>.js, which sets `window.MOCK_REPLAY` to one
 `view` message per trading day (same shape as the live contract in
@@ -21,15 +21,15 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from desk.explain import load_reasons, reason  # noqa: E402
-from desk.sim import REPLAYS, load_prices, run  # noqa: E402
+from canary.explain import load_reasons, reason  # noqa: E402
+from canary.sim import REPLAYS, load_prices, run  # noqa: E402
 
 
 def record(replay_name: str) -> list[dict[str, Any]]:
     """Run the offline sim and turn each demo day into a `view` message.
 
     Args:
-        replay_name: Key of desk.sim.REPLAYS, e.g. "2020".
+        replay_name: Key of canary.sim.REPLAYS, e.g. "2020".
 
     Returns:
         One view message per day from replay.start to replay.end.
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     path = Path(__file__).with_name(f"replay{args.replay}.js")
     body = json.dumps(days, separators=(",", ":"))
     path.write_text(
-        f"/** Recorded by web/mock/record.py from desk.sim. Do not edit. */\n"
+        f"/** Recorded by web/mock/record.py from canary.sim. Do not edit. */\n"
         f"window.MOCK_REPLAY = {body};\n",
         encoding="utf-8",
     )
