@@ -52,7 +52,9 @@ def record(replay_name: str) -> list[dict[str, Any]]:
             "date": day.date,
             "prices": {c: prices[c][j] for c in prices},
         }
-        views = [{**v, "ts": 0, "reason": reason(v, day.date, cache)} for v in day.views]
+        views = [
+            {**v, "ts": 0, "reason": reason(v, day.date, cache)} for v in day.views
+        ]
         msg: dict[str, Any] = {
             "type": "view",
             "agent": "mock",
@@ -80,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Process exit code.
     """
-    parser = argparse.ArgumentParser(description="Record a mock replay for the browser.")
+    parser = argparse.ArgumentParser(
+        description="Record a mock replay for the browser."
+    )
     parser.add_argument("--replay", choices=sorted(REPLAYS), default="2020")
     args = parser.parse_args(argv)
     days = record(args.replay)
