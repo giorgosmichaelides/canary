@@ -78,6 +78,10 @@
     .cc table { border-collapse: collapse; margin-top: 4px; font-variant-numeric: tabular-nums; }
     .cc th, .cc td { padding: 2px 10px 2px 0; text-align: right; }
     .cc th:first-child, .cc td:first-child, .cc td:last-child { text-align: left; }
+    .cc .report { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
+    .cc .report h3 { margin: 0 0 6px; font-size: 14px; color: ${C.ink}; }
+    .cc .report ul { margin: 0; padding-left: 18px; line-height: 1.5; }
+    .cc .report .note { color: ${C.muted}; margin: 8px 0 0; font-size: 12px; }
   `;
   document.head.appendChild(style);
 
@@ -98,7 +102,11 @@
   details.append(el("summary", "Data table"));
   const table = el("table");
   details.append(table);
-  root.append(title, sub, wrap, details);
+  const report = el("section");
+  report.className = "report";
+  report.hidden = true;
+  report.setAttribute("aria-live", "polite");
+  root.append(title, sub, wrap, details, report);
 
   /**
    * Make an element with optional text (never HTML).
@@ -176,7 +184,8 @@
   function onCard(card) {
     if (!state.card || state.card.id !== card.id) {
       state.card = {
-        id: card.id, date: card.date, action: card.action, slice: card.slice, cut: card.cut, verdict: null, by: null,
+        id: card.id, date: card.date, action: card.action, slice: card.slice, cut: card.cut, risk: card.risk,
+        votes: card.votes || [], why: card.why || null, verdict: null, by: null, reason: "", seconds: null,
       };
     }
   }
@@ -190,6 +199,8 @@
     if (state.card && state.card.id === msg.id) {
       state.card.verdict = msg.verdict;
       state.card.by = msg.by || null;
+      state.card.reason = msg.reason || "";
+      state.card.seconds = typeof msg.seconds_to_decide === "number" ? msg.seconds_to_decide : null;
     }
   }
 
@@ -498,7 +509,74 @@
     return verdict === "approve" ? "cut (approved)" : verdict === "veto" ? "cut (vetoed)" : "if cut";
   }
 
-  /** Subtitle and data table. @returns {void} */
+  /**
+   * The end-of-replay incident report, written from the decision log and the numbers.
+   * Template text, no AI: every sentence is built from values the desk recorded.
+   * @returns {string[]} One line per bullet, or [] until the replay has finished.
+   */
+  function reportLines() {
+    const days = state.days.filter(Boolean);
+    const total = REPLAY_DAYS[state.replay];
+    if (!total || days.length < total) return [];
+    const lines = [];
+    const card = state.card;
+    const start = card && state.byDate[card.date];
+    if (!start) {
+      const peak = days.filter((d) => d.risk !== null).reduce((a, d) => (a && a.risk >= d.risk ? a : d), null);
+      lines.push("No card fired: risk never stayed at 0.50 or above for 2 days in a row (with the rule armed).");
+      if (peak) lines.push(`Highest risk: ${peak.risk.toFixed(2)} on ${shortDate(peak.date)}.`);
+    } else {
+      const fell = card.why ? ` with the commodity basket ${(-card.why.drawdown * 100).toFixed(1)}% below its peak` : "";
+      lines.push(`${shortDate(card.date)}: the code raised a card at risk ${card.risk.toFixed(2)}${fell} and proposed "${card.action}".`);
+      const side = (kind) => card.votes.filter((v) => v.vote === kind).map((v) => v.by);
+      const support = side("support");
+      const dissent = side("dissent");
+      if (support.length || dissent.length) {
+        lines.push(`Analysts: ${support.length ? `${support.join(" and ")} supported` : "none supported"}; ${dissent.length ? `${dissent.join(" and ")} dissented` : "none dissented"}.`);
+      }
+      if (card.verdict) {
+        const who = card.by ? ` by ${card.by}` : "";
+        const when = card.seconds !== null ? ` after ${card.seconds.toFixed(1)} s` : "";
+        const why = card.reason ? ` Reason: "${card.reason}".` : "";
+        lines.push(`Decision: ${card.verdict === "approve" ? "approved" : "vetoed"}${who}${when}.${why}`);
+      } else {
+        lines.push("Decision: none recorded.");
+      }
+      const after = days.filter((d) => d.i >= start.i);
+      const low = after.reduce((a, d) => (d.index < a.index ? d : a), after[0]);
+      const drop = (low.index / start.index - 1) * 100;
+      lines.push(`After the card the commodity basket fell another ${Math.abs(drop).toFixed(1)}%, to its low on ${shortDate(low.date)}.`);
+      const lowCut = cutValue(low);
+      const last = days[days.length - 1];
+      const lastCut = cutValue(last);
+      if (lowCut !== null && lastCut !== null) {
+        const taken = card.verdict === "approve";
+        lines.push(
+          `Portfolio at that low: ${lowCut.toFixed(1)} with the cut vs ${low.hold.toFixed(1)} without` +
+          ` (${(lowCut - low.hold >= 0 ? "+" : "")}${(lowCut - low.hold).toFixed(1)} points); at the end ${lastCut.toFixed(1)} vs ${last.hold.toFixed(1)}.` +
+          (taken ? "" : " The cut was not taken, so this is what it would have done."),
+        );
+      }
+    }
+    const rebounds = days.filter((d) => d.rebound).map((d) => shortDate(d.date));
+    if (rebounds.length) lines.push(`Rebound signals: ${rebounds.join(", ")}.`);
+    return lines;
+  }
+
+  /** Show or refresh the incident report. @returns {void} */
+  function renderReport() {
+    const lines = reportLines();
+    report.hidden = lines.length === 0;
+    if (report.hidden) return;
+    report.replaceChildren(el("h3", `Incident report: replay ${state.replay}`));
+    const list = el("ul");
+    for (const line of lines) list.append(el("li", line));
+    const note = el("p", "Written from the decision log and the desk's numbers (template, not AI). Thresholds were tuned on 2020; in 2008, 2022 and 2024 the same rule did no better than simple stop-loss rules.");
+    note.className = "note";
+    report.append(list, note);
+  }
+
+  /** Subtitle, incident report and data table. @returns {void} */
   function updateText() {
     const days = state.days.filter(Boolean);
     if (days.length === 0) return;
@@ -507,6 +585,7 @@
     const cut = cutValue(last);
     const impact = cut === null ? "" : ` Cut vs no action today: ${cut - last.hold >= 0 ? "+" : ""}${(cut - last.hold).toFixed(1)} points.`;
     sub.textContent = `${fake}Replay ${state.replay}: values = 100 on ${shortDate(state.base.date)}; now ${shortDate(last.date)}. Shaded: rebound days.${impact}`;
+    renderReport();
     if (!details.open) return;
     table.replaceChildren();
     const head = el("tr");
