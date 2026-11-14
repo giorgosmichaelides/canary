@@ -18,7 +18,7 @@ The Desk replays the March 2020 FX crash as live music. Four analyst processes e
 **Rules that hold the build together**
 
 1. **Numbers decide, Claude explains.** Every stance, risk score, alert and proposed action comes from pure functions in `desk/signals.py` and `desk/views.py`. Claude only writes a one-line reason, attached *after* the view is computed. No model output ever reaches a stance, an alert or an action.
-2. **Correlation is harmony.** One number, `unison`, pulls every part toward the same key, melody and rhythm.
+2. **Correlation is harmony.** One number, `unison`, pulls every part toward the same note, melody and rhythm.
 3. **No hub, no single point of failure.** Agents broadcast over UDP on localhost. Every analyst computes the risk score itself. The relay only listens, displays and forwards human decisions; killing it changes nothing for the agents.
 4. **Nothing at demo time touches the network.** Cached CSV, vendored Tone.js, pre-generated reason lines.
 
@@ -160,19 +160,20 @@ Model: `claude-haiku-5-5`, short timeout, no retries. System prompt: the analyst
 
 ## 8. Music
 
-| Analyst | Style | Calm key (semitones from D) | Scale | Own rhythm |
-|---|---|---|---|---|
-| `fx` | Jazz walking bass, swung | 0 | Dorian | Quarters with eighth pickups |
-| `havens` | Ambient pad | +4 | Lydian | One long chord per bar |
-| `commodity` | Rock root-and-fifth, distorted | −3 | Aeolian | Driving eighths |
-| `contrarian` | Syncopated pluck | +6 | Phrygian | Off-beats only |
-| risk (browser) | Drone and click | D | none | Click on each beat |
+All voices share **one scale: D minor pentatonic** (D F G A C, semitones 0 3 5 7 10 from D). There is no per-analyst key. Variety comes from rhythm and register, not key.
+
+| Analyst | Style | Register (root) | Own rhythm |
+|---|---|---|---|
+| `fx` | Jazz walking bass, swung | D2 | Quarters with eighth pickups |
+| `havens` | Ambient pad | D4 | One long chord per bar |
+| `commodity` | Rock root-and-fifth, distorted | D3 | Driving eighths |
+| `contrarian` | Syncopated pluck | D5 | Off-beats only |
+| risk (browser) | Drone and click | D (low) | Click on each beat |
 
 Sequencer runs every sixteenth and reads the latest state:
 ```
-key    = round(calm_key × (1 − unison))
 degree = round(pattern_degree × (1 − unison))
-pitch  = D + octave + key + scale[degree]
+pitch  = D(register) + 12 × floor(degree / 5) + scale[degree mod 5]
 step uses own rhythm if unison < threshold[analyst][step], else four on the floor
 ```
 Per-step thresholds make parts lock together gradually. At unison 1 every part plays D on the beat, in octaves.
@@ -181,7 +182,7 @@ Per-step thresholds make parts lock together gradually. At unison 1 every part p
 |---|---|
 | stance | Contour up when bullish, down when bearish |
 | conviction | Velocity (and note opacity on the score) |
-| unison | Key, melody and rhythm convergence; swing 0.45 → 0 |
+| unison | Melody and rhythm convergence on the shared scale; swing 0.45 → 0 |
 | risk | Drone gain, click level, tempo 116 → 70 bpm |
 | trust | Dry gain down, reverb send up |
 | `by` ≠ slice | Played by the coverer's instrument (bass line on the pad) |
@@ -250,7 +251,7 @@ canary/
 |---|---|---|
 | **Quant** | `signals`, `views`, `sim`, `explain`, `scripts/*`, data, Claude lines, the honest-claims table | `sim.py` prints the same card and lead-time table twice, identically, for 2020 and 2024 |
 | **Systems** | `bus`, `agent`, `tape`, `relay`, `run`, trust, takeover, reconnect, dedupe, decision log | Killing `fx` → neighbour covers within 4 s; killing the relay changes nothing in agent logs; killing any one analyst still produces the card |
-| **Sound and stage** | `music.js`, `score.js`, `app.js`, `index.html`, pitch, backup video | The unison slider takes the band from four keys to one note with no other input |
+| **Sound and stage** | `music.js`, `score.js`, `app.js`, `index.html`, pitch, backup video | The unison slider takes the band from four rhythms and registers to one note with no other input |
 
 The `view` message is the contract. Sound can build against a recorded file of view messages before agents exist (Systems records one in hour 2).
 
@@ -273,7 +274,7 @@ At hours 6 and 10, stop and run everything together even if parts are unfinished
 
 | Replay date | ~Seconds | What happens | What you say |
 |---|---|---|---|
-| 3–21 Feb | 0–28 | Correlation 0.1–0.25; four keys, four rhythms | "Each analyst plays its own market. This is what diversification sounds like." |
+| 3–21 Feb | 0–28 | Correlation 0.1–0.25; four rhythms, four registers | "Each analyst plays its own market. This is what diversification sounds like." |
 | ~24–25 Feb | 30–32 | **Press K.** Fx fades into reverb, then the pad picks up the bass line. Parts are still distinct, so the takeover is audible. | "We just killed an analyst. Nobody told the others." |
 | 27–28 Feb | 34–38 | Havens bid, commodity FX sold; drone grows | "Money is moving to safety." |
 | 2 Mar | 38 | Sting, card: cut commodity FX 30%. Fx and contrarian dissent. | Hand the mouse to a judge: "Approve or veto." Press R to revive fx while they read. |
