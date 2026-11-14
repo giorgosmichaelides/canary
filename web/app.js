@@ -49,9 +49,7 @@ async function startAudio() {
   }
   await Music.start();
   setStatus("Audio running.");
-  const button = document.getElementById("start-audio");
-  button.disabled = true;
-  button.textContent = "Audio on";
+  document.body.classList.add("started");
   Feed.startMock();
 }
 
@@ -64,6 +62,28 @@ async function startAudio() {
 function setSlider(id, value) {
   document.getElementById(id).value = value;
   (id === "unison" ? onUnisonInput : onRiskInput)();
+}
+
+/** Short connection labels for the header badge (the full detail goes in its tooltip and the desk log). */
+const FEED_LABELS = {
+  connecting: "Connecting…",
+  live: "Live · relay",
+  "relay-lost": "Relay lost · agents still running",
+  mock: "Recorded replay",
+};
+
+/** Analyst colours (same as the score and the CSS variables). */
+const COLOURS = { fx: "#5b9dff", havens: "#b48cff", commodity: "#ffb347", contrarian: "#4fd1c5" };
+
+/**
+ * Format a market date for the header, e.g. "Mon 2 Mar 2020".
+ * @param {string} iso "YYYY-MM-DD".
+ * @returns {string} Readable date, or the input if it does not parse.
+ */
+function formatDate(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso || "";
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /**
@@ -79,27 +99,57 @@ function mergeViews(views) {
 }
 
 /**
- * Rewrite the desk table from the book: slice, author, stance, conviction, reason.
+ * Build one table cell.
+ * @param {string} cls Class name.
+ * @param {...(Node|string)} children Content.
+ * @returns {HTMLTableCellElement} The cell.
+ */
+function cell(cls, ...children) {
+  const td = document.createElement("td");
+  td.className = cls;
+  td.append(...children);
+  return td;
+}
+
+/**
+ * Rewrite the Latest views table from the book: who, a stance bar, conviction, reason.
  * @returns {void}
  */
 function renderDesk() {
   const body = document.querySelector("#desk tbody");
   const rows = ANALYSTS.map((name) => book[name]).filter(Boolean);
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    const td = cell("empty", "Waiting for the first trading day…");
+    td.colSpan = 4;
+    tr.append(td);
+    body.replaceChildren(tr);
+    return;
+  }
   body.replaceChildren(
     ...rows.map((v) => {
       const tr = document.createElement("tr");
-      const cells = [
-        [v.slice + (v.by !== v.slice ? ` (covered by ${v.by})` : ""), ""],
-        [(v.stance >= 0 ? "+" : "") + v.stance.toFixed(2), "num"],
-        [v.conviction.toFixed(2), "num"],
-        [v.reason || "", "line"],
-      ];
-      for (const [text, cls] of cells) {
-        const td = document.createElement("td");
-        td.textContent = text;
-        td.className = cls;
-        tr.append(td);
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = COLOURS[v.by] || "#888";
+      const who = cell("who", dot, v.slice);
+      if (v.by !== v.slice) {
+        const note = document.createElement("small");
+        note.textContent = `covered by ${v.by}`;
+        who.append(note);
       }
+      const value = document.createElement("span");
+      value.className = "num";
+      value.textContent = (v.stance >= 0 ? "+" : "") + v.stance.toFixed(2);
+      const bar = document.createElement("div");
+      bar.className = "sbar";
+      const fill = document.createElement("i");
+      const half = Math.min(1, Math.abs(v.stance)) * 50;
+      fill.style.left = v.stance >= 0 ? "50%" : `${50 - half}%`;
+      fill.style.width = `${half}%`;
+      fill.style.background = v.stance >= 0 ? "var(--green)" : "var(--red)";
+      bar.append(fill);
+      tr.append(who, cell("stance", value, bar), cell("conv num", v.conviction.toFixed(2)), cell("line", v.reason || ""));
       return tr;
     }),
   );
@@ -120,6 +170,8 @@ function markHeard(name) {
  * @returns {void}
  */
 function onMessage(msg) {
+  // Quant's chart listens to the relay itself; in mock mode it is fed from here.
+  if (Feed.mode === "mock" && window.CanaryChart) window.CanaryChart.handle(msg);
   if (msg.type === "view") {
     const views = msg.views || [];
     mergeViews(views);
@@ -136,7 +188,7 @@ function onMessage(msg) {
       setSlider("risk", msg.risk);
     }
     const now = document.getElementById("now");
-    now.textContent = msg.date || "";
+    now.textContent = formatDate(msg.date);
     if (msg.rebound) {
       const tag = document.createElement("span");
       tag.className = "rebound";
@@ -182,6 +234,7 @@ function logDecision(d) {
   Music.hold(2.5); // let the decision chord ring before the music follows the market again
   Score.addDecision(d);
   const li = document.createElement("li");
+  li.className = d.verdict === "approve" ? "approve" : "veto";
   const name = d.by || d.decided_by; // the relay records the judge's name as "by"
   const who = name ? ` by ${name}` : "";
   li.textContent = `${d.market_date}: ${d.verdict} "${d.action}"${who} in ${d.seconds_to_decide}s${d.reason ? ` (${d.reason})` : ""}`;
@@ -368,8 +421,12 @@ function init() {
   });
   document.addEventListener("keydown", onKey);
   setInterval(refreshPanel, 250);
+  renderDesk();
   Feed.connect(onMessage, (mode, detail) => {
-    document.getElementById("feed-status").textContent = detail;
+    const badge = document.getElementById("feed-status");
+    badge.textContent = FEED_LABELS[mode] || detail;
+    badge.dataset.mode = mode;
+    badge.title = detail;
     addLog(detail);
   });
 }

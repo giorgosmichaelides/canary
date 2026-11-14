@@ -16,10 +16,10 @@ const Score = (() => {
   const COLOURS = { fx: "#5b9dff", havens: "#b48cff", commodity: "#ffb347", contrarian: "#4fd1c5" };
 
   /** Layout in CSS pixels. */
-  const LABEL_W = 92;
-  const COL_W = 16;
-  const STAFF_H = 54;
-  const RISK_H = 46;
+  const LABEL_W = 104;
+  const COL_W = 18;
+  const STAFF_H = 58;
+  const RISK_H = 52;
   const PAD = 10;
   const NOTE_R = 4.5;
 
@@ -116,15 +116,22 @@ const Score = (() => {
     });
   }
 
+  /** Palette for the canvas (matches the page's CSS variables). */
+  const INK = { text: "#eceef3", muted: "#8b92a3", faint: "#5d6476", band: "rgba(255,255,255,0.025)", grid: "#222736",
+                red: "#ff6b61", green: "#4cd18a", amber: "#ffb347", canary: "rgba(255,204,51,0.10)", calm: "#3a4256" };
+
   /**
-   * Draw a dashed vertical line.
+   * Draw a dashed vertical marker with a small label at the top.
    * @param {number} x X position.
    * @param {number} y0 Top.
    * @param {number} y1 Bottom.
-   * @param {string} colour Stroke colour.
+   * @param {string} colour Stroke and label colour.
+   * @param {string} label Text for the flag.
+   * @param {number} labelY Y of the flag.
+   * @param {"left"|"right"|"center"} [align] Which side of the line the flag sits on.
    * @returns {void}
    */
-  function dashed(x, y0, y1, colour) {
+  function marker(x, y0, y1, colour, label, labelY, align = "center") {
     ctx.save();
     ctx.setLineDash([4, 4]);
     ctx.strokeStyle = colour;
@@ -133,6 +140,21 @@ const Score = (() => {
     ctx.moveTo(x, y0);
     ctx.lineTo(x, y1);
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = "600 10px system-ui, sans-serif";
+    const w = ctx.measureText(label).width + 10;
+    const want = align === "right" ? x - w - 2 : align === "left" ? x + 2 : x - w / 2;
+    const left = Math.max(2, Math.min(want, canvas.clientWidth - w - 2));
+    ctx.fillStyle = "#10131a";
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(left, labelY - 8, w, 16, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = colour;
+    ctx.textAlign = "center";
+    ctx.fillText(label, left + w / 2, labelY + 0.5);
     ctx.restore();
   }
 
@@ -143,75 +165,114 @@ const Score = (() => {
   function render() {
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
-    const height = PAD * 2 + SLICES.length * STAFF_H + RISK_H + 18;
+    const top = 26; // room for marker flags
+    const height = top + SLICES.length * STAFF_H + RISK_H + 26;
     canvas.style.height = `${height}px`;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.font = "12px system-ui, sans-serif";
     ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
 
     const dates = [...days.keys()].sort();
     const fit = Math.max(1, Math.floor((width - LABEL_W - PAD) / COL_W));
     const shown = dates.slice(-fit);
     const xOf = (i) => LABEL_W + i * COL_W + COL_W / 2;
-    const bottom = PAD + SLICES.length * STAFF_H + RISK_H;
+    const staffTop = (row) => top + row * STAFF_H;
+    const riskTop = top + SLICES.length * STAFF_H + 6;
+    const riskBase = riskTop + RISK_H - 10;
+    const bottom = riskBase;
     hits = [];
 
-    // Staff labels and centre lines (stance 0).
+    // Staff bands, labels and centre lines (stance 0).
     SLICES.forEach((slice, row) => {
-      const mid = PAD + row * STAFF_H + STAFF_H / 2;
+      const y = staffTop(row);
+      if (row % 2 === 0) {
+        ctx.fillStyle = INK.band;
+        ctx.fillRect(LABEL_W - 8, y, width - LABEL_W + 8 - PAD, STAFF_H);
+      }
+      const mid = y + STAFF_H / 2;
       ctx.fillStyle = COLOURS[slice];
-      ctx.fillText(slice, 8, mid);
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.beginPath();
-      ctx.moveTo(LABEL_W - 6, mid);
+      ctx.arc(12, mid, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = INK.text;
+      ctx.font = "600 12px system-ui, sans-serif";
+      ctx.fillText(slice, 22, mid);
+      ctx.strokeStyle = INK.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(LABEL_W - 8, mid);
       ctx.lineTo(width - PAD, mid);
       ctx.stroke();
     });
-    const riskTop = PAD + SLICES.length * STAFF_H + 6;
-    const riskBase = riskTop + RISK_H - 10;
-    ctx.fillStyle = "#e8e8ee";
-    ctx.fillText("risk", 8, riskTop + (RISK_H - 10) / 2);
+
+    // Risk staff label and the 0.50 line.
+    ctx.fillStyle = INK.text;
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillText("risk", 22, riskTop + (RISK_H - 10) / 2);
     const halfY = riskBase - 0.5 * (RISK_H - 10);
-    ctx.strokeStyle = "rgba(255,123,114,0.5)";
+    ctx.save();
+    ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = "rgba(236,238,243,0.45)";
     ctx.beginPath();
-    ctx.moveTo(LABEL_W - 6, halfY);
+    ctx.moveTo(LABEL_W - 8, halfY);
     ctx.lineTo(width - PAD, halfY);
     ctx.stroke();
-    ctx.fillStyle = "rgba(255,123,114,0.8)";
+    ctx.restore();
+    ctx.fillStyle = INK.muted;
     ctx.font = "10px system-ui, sans-serif";
-    ctx.fillText("0.50", LABEL_W - 36, halfY);
-    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText("0.50", LABEL_W - 34, halfY);
+
+    if (!shown.length) {
+      ctx.fillStyle = INK.faint;
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText("Waiting for the first trading day…", LABEL_W, top + STAFF_H * 1.5);
+      return;
+    }
+
+    // Today's column.
+    const lastX = xOf(shown.length - 1);
+    ctx.fillStyle = INK.canary;
+    ctx.fillRect(lastX - COL_W / 2, top, COL_W, bottom - top);
 
     shown.forEach((date, i) => {
       const d = days.get(date);
       const x = xOf(i);
-      // Month ticks along the bottom.
+      // Month boundaries: a gridline and a label along the bottom.
       if (i === 0 || date.slice(0, 7) !== shown[i - 1].slice(0, 7)) {
-        ctx.fillStyle = "rgba(232,232,238,0.55)";
-        ctx.font = "10px system-ui, sans-serif";
-        ctx.fillText(date.slice(0, 7), x - 4, bottom + 10);
-        ctx.font = "12px system-ui, sans-serif";
+        if (i > 0) {
+          ctx.strokeStyle = INK.grid;
+          ctx.beginPath();
+          ctx.moveTo(x - COL_W / 2, top);
+          ctx.lineTo(x - COL_W / 2, bottom);
+          ctx.stroke();
+        }
+        const label = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
+        ctx.fillStyle = INK.muted;
+        ctx.font = "11px system-ui, sans-serif";
+        ctx.fillText(label, x - COL_W / 2 + 2, bottom + 14);
       }
       if (d.rebound) {
-        ctx.fillStyle = "rgba(95,211,141,0.08)";
-        ctx.fillRect(x - COL_W / 2, PAD, COL_W, bottom - PAD);
+        ctx.fillStyle = "rgba(76,209,138,0.09)";
+        ctx.fillRect(x - COL_W / 2, top, COL_W, bottom - top);
       }
       // Risk bar.
       if (typeof d.risk === "number") {
-        const h = d.risk * (RISK_H - 10);
-        ctx.fillStyle = d.risk >= 0.5 ? "#ff7b72" : "rgba(232,232,238,0.45)";
-        ctx.fillRect(x - COL_W / 2 + 3, riskBase - h, COL_W - 6, h);
+        const h = Math.max(1.5, d.risk * (RISK_H - 10));
+        ctx.fillStyle = d.risk >= 0.5 ? INK.red : INK.calm;
+        ctx.beginPath();
+        ctx.roundRect(x - COL_W / 2 + 3, riskBase - h, COL_W - 6, h, 2);
+        ctx.fill();
       }
       // Notes.
       SLICES.forEach((slice, row) => {
         const v = d.views[slice];
         if (!v) return;
-        const mid = PAD + row * STAFF_H + STAFF_H / 2;
-        const y = mid - v.stance * (STAFF_H / 2 - NOTE_R - 2);
-        ctx.globalAlpha = 0.2 + 0.8 * Math.max(0, Math.min(1, v.conviction));
+        const mid = staffTop(row) + STAFF_H / 2;
+        const y = mid - v.stance * (STAFF_H / 2 - NOTE_R - 3);
+        ctx.globalAlpha = 0.25 + 0.75 * Math.max(0, Math.min(1, v.conviction));
         ctx.fillStyle = COLOURS[v.by] || "#ccc";
         ctx.beginPath();
         ctx.arc(x, y, NOTE_R, 0, Math.PI * 2);
@@ -226,14 +287,19 @@ const Score = (() => {
         }
         hits.push({ x, y, date, view: v });
       });
-      if (d.escalation) dashed(x - 3, PAD, bottom, "#ff7b72");
-      if (d.decision) dashed(x + 3, PAD, bottom, d.decision.verdict === "approve" ? "#5fd38d" : "#ffb347");
     });
 
-    if (!shown.length) {
-      ctx.fillStyle = "rgba(232,232,238,0.5)";
-      ctx.fillText("Waiting for the first trading day...", LABEL_W, PAD + STAFF_H);
-    }
+    // Markers last, so they sit on top.
+    shown.forEach((date, i) => {
+      const d = days.get(date);
+      const x = xOf(i);
+      const both = d.escalation && d.decision;
+      if (d.escalation) marker(x - 3, top, bottom, INK.red, "card", 11, both ? "right" : "center");
+      if (d.decision) {
+        const approved = d.decision.verdict === "approve";
+        marker(x + 3, top, bottom, approved ? INK.green : INK.amber, approved ? "approved" : "vetoed", 11, both ? "left" : "center");
+      }
+    });
   }
 
   /**
