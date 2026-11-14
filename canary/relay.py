@@ -9,6 +9,7 @@ HTTP on http://localhost:8000:
                       {"type": "card", "card": {...}, "opened_at": ...} per
                       escalation id, however many analysts raise it
     POST /control     {"cmd": "kill", "target": "fx"} -> put on the bus
+                      {"cmd": "restart", "replay": "2008"} switches crisis
     POST /decision    {"id": "2020:2020-03-02", "verdict": "approve" | "veto",
                        "reason": "...", "by": "Judge name"} -> logged and broadcast
 
@@ -35,6 +36,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from canary.bus import Bus, make_bus
+from canary.sim import REPLAYS
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
@@ -247,7 +249,8 @@ class Relay:
         """Put a control command from the browser on the bus.
 
         Args:
-            body: {"cmd": ..., "target": ...}.
+            body: {"cmd": ..., "target": ...}, plus "replay" (e.g. "2008")
+                with "restart" to switch crisis.
 
         Returns:
             The control message sent.
@@ -259,6 +262,13 @@ class Relay:
         if cmd not in CONTROL_COMMANDS:
             raise DecisionError(f"cmd must be one of {CONTROL_COMMANDS}")
         msg: Message = {"type": "control", "cmd": cmd, "target": body.get("target")}
+        replay = body.get("replay")
+        if replay is not None:
+            if cmd != "restart" or replay not in REPLAYS:
+                raise DecisionError(
+                    f"replay only goes with restart, one of {sorted(REPLAYS)}"
+                )
+            msg["replay"] = replay
         self.bus.send(msg)
         return msg
 

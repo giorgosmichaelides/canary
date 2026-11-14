@@ -1,10 +1,12 @@
 """Tests for the relay's card dedupe and decision rules."""
 
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from canary.relay import Cards, DecisionError
+from canary.bus import Bus
+from canary.relay import Cards, DecisionError, Relay
 
 CARD = {"id": "2020:2020-03-02", "date": "2020-03-02", "action": "Cut commodity by 30%"}
 
@@ -74,3 +76,35 @@ def test_browser_that_connects_late_gets_open_cards() -> None:
     cards = Cards()
     cards.see(view("fx"), 0.0, 123.0)
     assert cards.snapshot() == [{"type": "card", "card": CARD, "opened_at": 123.0}]
+
+
+class _SentBus:
+    """Collects sent messages instead of using the network."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    def send(self, msg: dict[str, Any]) -> None:
+        self.sent.append(msg)
+
+
+def test_restart_can_switch_crisis(tmp_path: Path) -> None:
+    """The picker's {"cmd": "restart", "replay": "2008"} goes on the bus as is."""
+    bus = _SentBus()
+    relay = Relay(cast(Bus, bus), tmp_path / "decisions.jsonl")
+    relay.control({"cmd": "restart", "replay": "2008"})
+    assert bus.sent[-1] == {
+        "type": "control",
+        "cmd": "restart",
+        "target": None,
+        "replay": "2008",
+    }
+
+
+def test_unknown_crisis_or_replay_on_other_commands_is_refused(tmp_path: Path) -> None:
+    """Only real replays, and only with restart."""
+    relay = Relay(cast(Bus, _SentBus()), tmp_path / "decisions.jsonl")
+    with pytest.raises(DecisionError):
+        relay.control({"cmd": "restart", "replay": "1929"})
+    with pytest.raises(DecisionError):
+        relay.control({"cmd": "kill", "target": "fx", "replay": "2008"})

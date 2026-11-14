@@ -22,6 +22,8 @@
   const CURRENCIES = ["EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NOK"];
   /** Days of returns per correlation (canary.signals.CORRELATION_WINDOW, locked). */
   const CORR_WINDOW = 10;
+  /** The crises the picker offers (canary.sim.REPLAYS), with what happened. */
+  const CRISES = [["2008", "2008 · Lehman"], ["2020", "2020 · COVID"], ["2022", "2022 · Dollar spike"], ["2024", "2024 · Yen unwind"]];
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   /** Colours by role (dark page). Series pair validated on #0b0d12 with the dataviz validator. */
@@ -82,6 +84,11 @@
     .cc table { border-collapse: collapse; margin-top: 4px; font-variant-numeric: tabular-nums; }
     .cc th, .cc td { padding: 2px 10px 2px 0; text-align: right; }
     .cc th:first-child, .cc td:first-child, .cc td:last-child { text-align: left; }
+    .cc .picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+    .cc .picker button { font: inherit; font-size: 12px; color: ${C.ink2}; background: transparent; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 3px 10px; }
+    .cc .picker button[aria-pressed="true"] { color: ${C.ink}; border-color: ${C.ink2}; background: rgba(255,255,255,0.08); }
+    .cc .picker button:disabled { opacity: .5; cursor: default; }
     .cc .heat { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .cc .heat h3 { margin: 0 0 2px; font-size: 14px; color: ${C.ink}; }
     .cc .heat .grid { display: grid; grid-template-columns: 36px repeat(7, minmax(22px, 40px)); gap: 2px; margin-top: 8px; }
@@ -155,7 +162,47 @@
   bar.className = "bar";
   scale.append(el("span", "−1 opposite"), bar, el("span", "+1 together"));
   heat.append(heatTitle, heatSub, grid, scale);
-  root.append(title, sub, wrap, details, heat, report);
+  // Crisis picker: restart the tape on another crisis (live relay only).
+  const picker = el("div");
+  picker.className = "picker";
+  picker.setAttribute("role", "group");
+  picker.setAttribute("aria-label", "Replay a crisis");
+  const pickButtons = {};
+  for (const [name, label] of CRISES) {
+    const button = el("button", label);
+    button.type = "button";
+    button.addEventListener("click", () => pickCrisis(name));
+    pickButtons[name] = button;
+    picker.append(button);
+  }
+  picker.hidden = !location.protocol.startsWith("http");
+  root.append(title, sub, picker, wrap, details, heat, report);
+
+  /**
+   * Ask the relay to restart the tape on another crisis.
+   * @param {string} name Replay name, e.g. "2008".
+   * @returns {Promise<void>}
+   */
+  async function pickCrisis(name) {
+    for (const b of Object.values(pickButtons)) b.disabled = true;
+    try {
+      const res = await fetch("/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cmd: "restart", replay: name }),
+      });
+      if (!res.ok) sub.textContent = `Could not switch to ${name}: ${await res.text()}`;
+    } catch (err) {
+      sub.textContent = `Could not reach the relay to switch to ${name}.`;
+    } finally {
+      setTimeout(() => { for (const b of Object.values(pickButtons)) b.disabled = false; }, 1500);
+    }
+  }
+
+  /** Highlight the crisis that is playing. @returns {void} */
+  function markPicked() {
+    for (const [name, b] of Object.entries(pickButtons)) b.setAttribute("aria-pressed", String(name === state.replay));
+  }
 
   /**
    * Make an element with optional text (never HTML).
@@ -698,6 +745,7 @@
 
   /** Subtitle, incident report and data table. @returns {void} */
   function updateText() {
+    markPicked();
     const days = state.days.filter(Boolean);
     if (days.length === 0) return;
     const last = days[days.length - 1];

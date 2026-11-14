@@ -212,5 +212,15 @@ const Card = (() => {
     close();
   }
 
-  return { init, show, decidedElsewhere, get isOpen() { return open !== null; } };
+  /**
+   * A new replay started: close any open card and forget past decisions,
+   * so the same card can be shown again after a restart.
+   * @returns {void}
+   */
+  function reset() {
+    if (open) close();
+    decided.clear();
+  }
+
+  return { init, show, decidedElsewhere, reset, get isOpen() { return open !== null; } };
 })();

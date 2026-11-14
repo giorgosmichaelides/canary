@@ -171,9 +171,14 @@ class Tape:
             self.playing = False
             self.log("pause")
         elif cmd == "restart":
+            name = msg.get("replay")
+            if isinstance(name, str) and name in REPLAYS and name != self.replay.name:
+                self.replay = REPLAYS[name]
+                self.dates, self.prices, self.synthetic = load_tape(self.replay)
+                self.days = replay_days(self.dates, self.replay)
             self.position = 0
             self.playing = True
-            self.log(f"restart {self.replay.name}")
+            self.log(f"restart {self.replay.name}: {len(self.days)} days")
 
     def run(self) -> None:
         """Send ticks on time while listening for controls. Runs until Ctrl-C."""

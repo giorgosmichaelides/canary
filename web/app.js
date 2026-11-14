@@ -26,6 +26,9 @@ const heard = {};
 const covering = {};
 const degraded = new Set();
 
+/** The last tick seen ({replay, i}), to notice a restart or a new crisis. */
+let lastTick = null;
+
 /** Latest risk and unison from the views. */
 let latest = { risk: 0, unison: 0 };
 
@@ -172,7 +175,17 @@ function markHeard(name) {
 function onMessage(msg) {
   // Quant's chart listens to the relay itself; in mock mode it is fed from here.
   if (Feed.mode === "mock" && window.CanaryChart) window.CanaryChart.handle(msg);
-  if (msg.type === "view") {
+  if (msg.type === "tick") {
+    // A different crisis, or a restart: clear the score, any open card and the book.
+    const replay = String(msg.replay);
+    const i = Number(msg.i);
+    if (lastTick && (replay !== lastTick.replay || i < lastTick.i)) {
+      Score.reset();
+      Card.reset();
+      for (const key of Object.keys(book)) delete book[key];
+    }
+    lastTick = { replay, i };
+  } else if (msg.type === "view") {
     const views = msg.views || [];
     mergeViews(views);
     markHeard(msg.agent);

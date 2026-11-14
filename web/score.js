@@ -330,5 +330,15 @@ const Score = (() => {
       (v.reason ? ` · "${v.reason}"` : "");
   }
 
-  return { init, addView, addDecision, addReason, render: requestRender };
+  /**
+   * Forget every day (a new replay started).
+   * @returns {void}
+   */
+  function reset() {
+    days.clear();
+    hits = [];
+    requestRender();
+  }
+
+  return { init, addView, addDecision, addReason, reset, render: requestRender };
 })();
