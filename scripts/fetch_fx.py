@@ -1,5 +1,6 @@
 """Download daily exchange rates from FRED into data/fx_daily.csv."""
 
+from pathlib import Path
 import urllib.error
 import urllib.request
 import csv
@@ -7,6 +8,7 @@ import io
 
 URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}&cosd={start}&coed={end}"
 TIMEOUT_SECONDS = 30  # give up after 30s instead of hanging
+DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "fx_daily.csv"
 
 # column -> (FRED id, flip?). Flip turns "X per dollar" into "dollars per X".
 SERIES: dict[str, tuple[str, bool]] = {
@@ -97,6 +99,33 @@ def fetch_currency(fred_id: str, flip: bool) -> dict[str, float]:
     return values
 
 
+def main() -> None:
+    """Download every currency and write the CSV.
+
+    Only days where all 7 currencies have a price are kept.
+
+    Raises:
+        RuntimeError: If a download fails.
+    """
+    prices = {
+        name: fetch_currency(fred_id, flip) for name, (fred_id, flip) in SERIES.items()
+    }
+
+    # Keep only the dates that every currency has.
+    common: set[str] = set(prices["EUR"])
+    for currency_prices in prices.values():
+        common &= set(currency_prices)
+    dates = sorted(common)
+
+    DATA_FILE.parent.mkdir(exist_ok=True)
+    with DATA_FILE.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["date", *SERIES])
+        for date in dates:
+            writer.writerow([date, *(f"{prices[name][date]:.8g}" for name in SERIES)])
+
+    print(f"Wrote {len(dates)} days to {DATA_FILE}")
+
+
 if __name__ == "__main__":
-    jpy = fetch_currency("DEXJPUS", flip=True)
-    print(len(jpy), jpy["2020-03-02"])
+    main()
