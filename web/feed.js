@@ -31,6 +31,8 @@ const Feed = (() => {
     index: 0, timer: null, hbTimer: null, paused: false, decided: new Set(), started: false, wanted: false,
     down: new Map(), // analyst -> Date.now() when killed
     degraded: new Set(),
+    lastTick: -1, // index of the last day whose tick was sent
+    carded: new Set(), // escalation ids already announced with a card event
   };
 
   /** Takeover ring and timing (DESIGN.md section 5), emulated by the mock. */
@@ -203,12 +205,22 @@ const Feed = (() => {
       handler({ type: "log", agent: "mock", text: "Replay finished." });
       return;
     }
-    const day = days[mock.index];
+    const { _tick: tick, ...day } = days[mock.index];
+    // Like the real tape: one tick per trading day (prices), before the views.
+    if (tick && mock.lastTick !== mock.index) {
+      mock.lastTick = mock.index;
+      handler({ ...tick });
+    }
     const ts = Date.now() / 1000;
     const msg = { ...day, ts, views: mockViews(day.views, ts) };
     msg.covering = RING.filter((s) => mockGone(s));
     if (msg.escalation && mock.decided.has(msg.escalation.id)) delete msg.escalation;
     handler(msg);
+    // Like the relay: one card event per escalation id.
+    if (msg.escalation && !mock.carded.has(msg.escalation.id)) {
+      mock.carded.add(msg.escalation.id);
+      handler({ type: "card", card: msg.escalation, opened_at: ts });
+    }
     if (!(msg.escalation || mock.paused)) mock.index += 1;
   }
 
