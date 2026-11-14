@@ -56,7 +56,9 @@ function init() {
   for (const box of document.querySelectorAll("#voices input[data-voice]")) {
     box.addEventListener("change", () => Music.setMute(box.dataset.voice, box.checked));
   }
-  const riskBox = document.getElementById("mute-risk");
+  const style = document.getElementById("style");
+  style.addEventListener("change", () => Music.setStyle(style.value));
+  const riskBox =document.getElementById("mute-risk");
   riskBox.addEventListener("change", () => Music.setRiskMute(riskBox.checked));
   onUnisonInput();
   onRiskInput();
