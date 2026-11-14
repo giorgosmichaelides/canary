@@ -204,8 +204,8 @@ const Card = (() => {
       by: name, // the relay reads "by" (canary/relay.py)
     });
     el("card-approve").disabled = el("card-veto").disabled = false;
-    if (!ok) {
-      error.textContent = "Could not reach the relay. Try again.";
+    if (ok !== true) {
+      error.textContent = typeof ok === "string" ? ok : "Could not reach the relay. Try again.";
       return;
     }
     decided.add(escalation.id);

@@ -32,15 +32,26 @@ def record(replay_name: str) -> list[dict[str, Any]]:
         replay_name: Key of canary.sim.REPLAYS, e.g. "2020".
 
     Returns:
-        One view message per day from replay.start to replay.end.
+        One view message per day from replay.start to replay.end. Each also
+        carries `_tick`: the tape's tick for that day (prices from the cached
+        CSV), which the mock sends first, as the real tape would.
     """
     replay = REPLAYS[replay_name]
     dates, prices = load_prices()
+    row = {d: j for j, d in enumerate(dates)}
     cache = load_reasons()
     out: list[dict[str, Any]] = []
     for day in run(replay, dates, prices):
         if day.date < replay.start:
             continue
+        j = row[day.date]
+        tick = {
+            "type": "tick",
+            "replay": replay_name,
+            "i": len(out),
+            "date": day.date,
+            "prices": {c: prices[c][j] for c in prices},
+        }
         views = [{**v, "ts": 0, "reason": reason(v, day.date, cache)} for v in day.views]
         msg: dict[str, Any] = {
             "type": "view",
@@ -55,6 +66,7 @@ def record(replay_name: str) -> list[dict[str, Any]]:
         }
         if day.escalation is not None:
             msg["escalation"] = day.escalation
+        msg["_tick"] = tick
         out.append(msg)
     return out
 

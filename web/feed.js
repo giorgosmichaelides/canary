@@ -31,6 +31,8 @@ const Feed = (() => {
     index: 0, timer: null, hbTimer: null, paused: false, decided: new Set(), started: false, wanted: false,
     down: new Map(), // analyst -> Date.now() when killed
     degraded: new Set(),
+    lastTick: -1, // index of the last day whose tick was sent
+    carded: new Set(), // escalation ids already announced with a card event
   };
 
   /** Takeover ring and timing (DESIGN.md section 5), emulated by the mock. */
@@ -203,12 +205,22 @@ const Feed = (() => {
       handler({ type: "log", agent: "mock", text: "Replay finished." });
       return;
     }
-    const day = days[mock.index];
+    const { _tick: tick, ...day } = days[mock.index];
+    // Like the real tape: one tick per trading day (prices), before the views.
+    if (tick && mock.lastTick !== mock.index) {
+      mock.lastTick = mock.index;
+      handler({ ...tick });
+    }
     const ts = Date.now() / 1000;
     const msg = { ...day, ts, views: mockViews(day.views, ts) };
     msg.covering = RING.filter((s) => mockGone(s));
     if (msg.escalation && mock.decided.has(msg.escalation.id)) delete msg.escalation;
     handler(msg);
+    // Like the relay: one card event per escalation id.
+    if (msg.escalation && !mock.carded.has(msg.escalation.id)) {
+      mock.carded.add(msg.escalation.id);
+      handler({ type: "card", card: msg.escalation, opened_at: ts });
+    }
     if (!(msg.escalation || mock.paused)) mock.index += 1;
   }
 
@@ -216,7 +228,8 @@ const Feed = (() => {
    * POST JSON to the relay.
    * @param {string} path Endpoint path.
    * @param {Object} body Request body.
-   * @returns {Promise<boolean>} True if the relay accepted it.
+   * @returns {Promise<true|string>} True if the relay accepted it, else the reason it did not
+   *   (the relay's `{"error": ...}` message, or a network failure).
    */
   async function post(path, body) {
     try {
@@ -225,10 +238,17 @@ const Feed = (() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      return res.ok;
+      if (res.ok) return true;
+      try {
+        const data = await res.json();
+        if (data && data.error) return `Relay: ${data.error}`;
+      } catch (err) {
+        /* no JSON body */
+      }
+      return `Relay answered ${res.status}.`;
     } catch (err) {
       console.warn(`POST ${path} failed`, err);
-      return false;
+      return "Could not reach the relay. Try again.";
     }
   }
 
@@ -236,7 +256,7 @@ const Feed = (() => {
    * Send a human decision. Live: the relay logs and broadcasts it. Mock: the
    * decision is echoed back locally as a `decision` message.
    * @param {{id: string, verdict: string, reason: string, action: string, market_date: string, seconds_to_decide: number}} decision
-   * @returns {Promise<boolean>} True if delivered.
+   * @returns {Promise<true|string>} True if accepted, else why not.
    */
   async function sendDecision(decision) {
     if (mode === "mock") {
@@ -272,7 +292,7 @@ const Feed = (() => {
       }
       return true;
     }
-    return post("/control", { cmd, target });
+    return (await post("/control", { cmd, target })) === true;
   }
 
   return { connect, startMock, sendDecision, sendControl, get mode() { return mode; } };
