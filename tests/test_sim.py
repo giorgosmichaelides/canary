@@ -1,10 +1,11 @@
 """Tests for desk.sim, including the real 2020 replay."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from desk.sim import REPLAYS, load_prices, report, run
+from desk.sim import REPLAYS, load_prices, report, run, to_json
 
 
 def test_load_prices_reads_the_csv(tmp_path: Path) -> None:
@@ -56,3 +57,29 @@ def test_replay_is_identical_every_time() -> None:
         first = report(replay, run(replay, dates, prices))
         second = report(replay, run(replay, dates, prices))
         assert first == second
+
+
+def test_json_replay_has_the_window_and_events() -> None:
+    """--json output: 48 days, card on 2 Mar with votes, rebound on 25 Mar."""
+    dates, prices = load_prices()
+    replay = REPLAYS["2020"]
+    data = json.loads(to_json(replay, run(replay, dates, prices), cache={}))
+    days = {day["date"]: day for day in data["days"]}
+    assert len(data["days"]) == 48
+    assert days["2020-03-02"]["escalation"]["action"] == "Cut commodity by 30%"
+    assert days["2020-03-25"]["rebound"] is True
+    assert days["2020-02-03"]["escalation"] is None
+    assert all(view["reason"] for view in days["2020-03-02"]["views"])
+    assert [c["date"] for c in data["cards_before_replay"]] == [
+        "2020-01-08",
+        "2020-01-31",
+    ]
+
+
+def test_json_replay_is_identical_every_time() -> None:
+    """Same data, byte-identical JSON."""
+    dates, prices = load_prices()
+    replay = REPLAYS["2020"]
+    first = to_json(replay, run(replay, dates, prices), cache={})
+    second = to_json(replay, run(replay, dates, prices), cache={})
+    assert first == second
