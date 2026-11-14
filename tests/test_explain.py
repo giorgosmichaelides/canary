@@ -1,12 +1,12 @@
-"""Tests for desk.explain."""
+"""Tests for canary.explain."""
 
 from pathlib import Path
 
 import pytest
 
-from desk.explain import load_reasons, reason, reason_key, template_reason
-from desk.sim import REPLAYS, load_prices, run
-from desk.views import View
+from canary.explain import load_reasons, reason, reason_key, template_reason
+from canary.sim import REPLAYS, load_prices, run
+from canary.views import View
 
 
 def make_view(

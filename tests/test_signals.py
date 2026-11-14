@@ -1,8 +1,8 @@
-"""Tests for desk.signals."""
+"""Tests for canary.signals."""
 
 import pytest
 
-from desk.signals import (
+from canary.signals import (
     correlation,
     returns,
     mean_correlation,

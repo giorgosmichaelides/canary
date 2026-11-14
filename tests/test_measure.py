@@ -1,6 +1,6 @@
 """Tests for scripts/measure.py, on the real data."""
 
-from desk.sim import REPLAYS, load_prices, run
+from canary.sim import REPLAYS, load_prices, run
 from scripts.measure import Row, format_row, lead_times
 
 

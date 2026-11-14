@@ -53,7 +53,7 @@ Temperament = momentum window: `fx` 3 days (nervous), `havens` 8 days (calm), `c
 
 **Lock the correlation window in hours 0–2 and do not touch it.** Locked at 10 days (`signals.CORRELATION_WINDOW`). Correlation reaches 0.68 on 18 Mar against a 0.65 saturation point (and 0.68–0.70 again on 30 Mar and 6–8 Apr, so the band merges again near the end); any later change can lose full unison.
 
-**As implemented** (`desk/signals.py`, `desk/views.py`):
+**As implemented** (`canary/signals.py`, `canary/views.py`):
 - `normal_vol` = std dev of the slice basket's daily returns over the last 60 days (fewer at the start of the data); `recent_vol` = last 10 days.
 - Each slice is judged on its equal-weight basket. The contrarian's own slice is all 7 currencies; it scans fx, havens and commodity baskets for the largest |z| and reports that group in `about`.
 - `risk_basket_drawdown` is the AUD/CAD/NOK basket's fall from its peak since the start of the data. `risk` is capped at 1.

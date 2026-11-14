@@ -11,7 +11,7 @@ without it every reason comes from template_reason().
 import json
 from pathlib import Path
 
-from desk.views import View
+from canary.views import View
 
 REASONS_FILE = Path(__file__).resolve().parent.parent / "data" / "reasons.json"
 

@@ -8,9 +8,9 @@ Two transports with the same methods:
     PortBus  fallback: each process owns one localhost port, send() goes to all
 
 Check it by hand in two terminals:
-    python -m desk.bus check
-    python -m desk.bus listen
-    python -m desk.bus send '{"type": "view", "agent": "fx"}'
+    python -m canary.bus check
+    python -m canary.bus listen
+    python -m canary.bus send '{"type": "view", "agent": "fx"}'
 Add --transport ports --name <peer> to try the fallback (each listener needs a
 different name from PEERS).
 """
@@ -196,8 +196,8 @@ def multicast_works() -> bool:
 
 
 def main() -> None:
-    """Command-line check: python -m desk.bus check | listen | send '<json>'."""
-    parser = argparse.ArgumentParser(prog="python -m desk.bus")
+    """Command-line check: python -m canary.bus check | listen | send '<json>'."""
+    parser = argparse.ArgumentParser(prog="python -m canary.bus")
     parser.add_argument("command", choices=["check", "listen", "send"])
     parser.add_argument(
         "message",

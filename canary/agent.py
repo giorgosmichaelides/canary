@@ -14,11 +14,11 @@ entirely on its own:
 
 Nothing here waits on a peer or on Claude, and every number comes from
 signals.py and views.py, so with everyone alive the live numbers match
-``python -m desk.sim``.
+``python -m canary.sim``.
 
 Usage:
-    python -m desk.agent --name fx
-    python -m desk.agent --name havens --transport ports
+    python -m canary.agent --name fx
+    python -m canary.agent --name havens --transport ports
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ import os
 import time
 from typing import Any, Optional, cast
 
-from desk.bus import Bus, make_bus
-from desk.explain import load_reasons, reason
-from desk.signals import (
+from canary.bus import Bus, make_bus
+from canary.explain import load_reasons, reason
+from canary.signals import (
     CORRELATION_WINDOW,
     RISK_BASKET,
     basket,
@@ -41,9 +41,9 @@ from desk.signals import (
     risk_score,
     unison,
 )
-from desk.sim import CURRENCIES, MIN_HISTORY, REPLAYS, Replay, run
-from desk.tape import load_tape
-from desk.views import (
+from canary.sim import CURRENCIES, MIN_HISTORY, REPLAYS, Replay, run
+from canary.tape import load_tape
+from canary.views import (
     Escalation,
     EscalationState,
     View,
@@ -151,7 +151,7 @@ def alive_analysts(
 def history(
     dates: list[str], prices: Prices, replay: Replay, date: str
 ) -> Optional[Prices]:
-    """The prices an analyst may look at on a given day, exactly as desk.sim sees them.
+    """The prices an analyst may look at on a given day, exactly as canary.sim sees them.
 
     Args:
         dates: Every date in the price file, oldest first.
@@ -233,7 +233,7 @@ def warm_states(
 
     Used when an agent starts, restarts or is revived mid-replay, so it
     remembers earlier cards (e.g. the 31 Jan false alarm) the same way
-    desk.sim does.
+    canary.sim does.
 
     Args:
         replay: The replay.
@@ -259,7 +259,7 @@ class Analyst:
 
         Args:
             name: One of RING.
-            bus: A bus from desk.bus.make_bus.
+            bus: A bus from canary.bus.make_bus.
         """
         self.name = name
         self.bus = bus
@@ -542,7 +542,7 @@ class Analyst:
             date: Today's market date.
 
         Returns:
-            The state desk.sim would have on that morning.
+            The state canary.sim would have on that morning.
         """
         if replay.name not in self.warm:
             self.warm[replay.name] = warm_states(replay, self.dates, self.prices)
@@ -551,7 +551,7 @@ class Analyst:
 
 def main() -> None:
     """Start one analyst from the command line."""
-    parser = argparse.ArgumentParser(prog="python -m desk.agent")
+    parser = argparse.ArgumentParser(prog="python -m canary.agent")
     parser.add_argument("--name", choices=RING, required=True)
     parser.add_argument(
         "--transport", choices=["multicast", "ports"], default="multicast"

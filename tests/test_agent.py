@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from desk.agent import (
+from canary.agent import (
     GONE_AFTER,
     RING,
     STARTUP_GRACE,
@@ -16,7 +16,7 @@ from desk.agent import (
     slices_to_cover,
     trust,
 )
-from desk.sim import REPLAYS, load_prices, run
+from canary.sim import REPLAYS, load_prices, run
 
 ALL = set(RING)
 
