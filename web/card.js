@@ -184,7 +184,7 @@ const Card = (() => {
       action: escalation.action,
       market_date: escalation.date,
       seconds_to_decide: Math.round((performance.now() - openedAt) / 100) / 10,
-      decided_by: name,
+      by: name, // the relay reads "by" (canary/relay.py)
     });
     el("card-approve").disabled = el("card-veto").disabled = false;
     if (!ok) {
