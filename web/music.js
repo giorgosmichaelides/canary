@@ -8,7 +8,22 @@
  *
  * Exposes a single global: `Music`.
  */
+
+/**
+ * Smoothing of everything the sound reads (unison, risk, each analyst's stance
+ * and conviction). Time to settle (about 95% of the way) after a jump in the
+ * replay's values. Tune these two numbers by ear.
+ */
+const RISE_SECONDS = 2; // value going up
+const FALL_SECONDS = 5; // value going down
+
 const Music = (() => {
+  // A larger scheduling cushion: notes are queued further ahead, so a busy
+  // main thread (page, DevTools, feed updates) is less likely to cause crackle.
+  if (typeof Tone !== "undefined") {
+    Tone.getContext().lookAhead = 0.25;
+  }
+
   /** Pitch classes of the shared D minor pentatonic scale (D F G A C), in semitones from D. */
   const SCALE = [0, 3, 5, 7, 10];
 
@@ -18,11 +33,28 @@ const Music = (() => {
   /** Maximum swing at unison 0 (CLAUDE.md section 8: 0.45 -> 0). */
   const MAX_SWING = 0.45;
 
-  /** Latest unison value, read by the sequencer on every step. */
+  /** Raw values last sent in by the page. The sound never reads these directly. */
+  const target = { unison: 0, risk: 0 };
+
+  /** Per-analyst raw stance and conviction, and their smoothed copies (by slice name). */
+  const targetViews = {};
+  const smoothViews = {};
+
+  /** Smoothed unison, eased toward target.unison every frame (continuous). */
+  let smoothUnison = 0;
+
+  /**
+   * Unison as the pattern sees it: latched from smoothUnison at each bar line,
+   * so melody convergence, rhythm locking, swing and the arrival hit only
+   * change on the downbeat, never mid-bar.
+   */
   let unison = 0;
 
-  /** Latest risk value, read by the sequencer and the risk voice. */
+  /** Smoothed risk (continuous): drives tempo, drone, click level, dread layers. */
   let risk = 0;
+
+  /** Style waiting for the next bar line, or null. */
+  let pendingStyle = null;
 
   /** True when the risk voice (drone and click) is muted from the page. */
   let riskMuted = false;
@@ -36,6 +68,13 @@ const Music = (() => {
   /** MIDI notes of the arrival stack: D in four octaves (D2 to D5; nothing below laptop-speaker range). */
   const ARRIVAL_MIDIS = [38, 50, 62, 74];
 
+  /** Master level in dB, normal and ducked (while an approval card is open). */
+  const MASTER_DB = -6;
+  const DUCK_DB = -20;
+
+  /** True while the music is ducked under the approval card. */
+  let ducked = false;
+
   /** Thick shared synth that adds the arrival hit, built in build(). */
   let arrivalSynth = null;
 
@@ -47,6 +86,9 @@ const Music = (() => {
   /** Drone gain node and click synth, built in build(). */
   let droneGain = null;
   let clickSynth = null;
+
+  /** True once the Classical preset's synths exist. */
+  let classicalBuilt = false;
 
   /** True once the synths and sequencer have been built. */
   let built = false;
@@ -72,12 +114,66 @@ const Music = (() => {
     // Ominous layers. Each is silent in calm markets and grows as risk climbs.
     // Tritone (G#2 against the D drone): enters around risk 0.3, swells to full.
     const dread = Math.max(0, (risk - 0.3) / 0.7);
-    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.2 * dread ** 2, 0.3);
+    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.2 * dread ** 2, 0.1);
     // Sub rumble (filtered brown noise): rises from risk 0.2.
-    rumbleGain.gain.rampTo(riskMuted ? 0 : 0.3 * Math.max(0, (risk - 0.2) / 0.8) ** 2, 0.3);
+    rumbleGain.gain.rampTo(riskMuted ? 0 : 0.3 * Math.max(0, (risk - 0.2) / 0.8) ** 2, 0.1);
     // The room gets bigger and the music recedes into it.
-    hallReverb.wet.rampTo(0.25 + 0.45 * risk, 0.5);
+    if (hallReverb) hallReverb.wet.rampTo(0.25 + 0.45 * risk, 0.1);
   }
+
+  /**
+   * Ease one value toward its target: exponential approach, faster going up
+   * than down. RISE_SECONDS / FALL_SECONDS are the time to get ~95% there.
+   * @param {number} current Current smoothed value.
+   * @param {number} goal Target value.
+   * @param {number} dt Seconds since the last frame.
+   * @returns {number} The new smoothed value.
+   */
+  function ease(current, goal, dt) {
+    const seconds = goal > current ? RISE_SECONDS : FALL_SECONDS;
+    if (seconds <= 0) return goal;
+    const next = goal + (current - goal) * Math.exp((-3 * dt) / seconds);
+    return Math.abs(next - goal) < 0.0005 ? goal : next;
+  }
+
+  /** Frame period in ms, and how many frames between pushes of smoothed risk to the audio params. */
+  const FRAME_MS = 16;
+  const APPLY_EVERY = 4;
+  let frameCount = 0;
+  let lastFrame = performance.now();
+  let lastAppliedRisk = -1;
+
+  /**
+   * One smoothing frame. Before audio starts it just snaps to the targets,
+   * so the first notes start from the right place.
+   * @returns {void}
+   */
+  function frame() {
+    const now = performance.now();
+    const dt = Math.min((now - lastFrame) / 1000, 1);
+    lastFrame = now;
+    if (!built) {
+      smoothUnison = target.unison;
+      risk = target.risk;
+      for (const name of Object.keys(targetViews)) smoothViews[name] = { ...targetViews[name] };
+      return;
+    }
+    smoothUnison = ease(smoothUnison, target.unison, dt);
+    risk = ease(risk, target.risk, dt);
+    for (const [name, goal] of Object.entries(targetViews)) {
+      const cur = smoothViews[name] || goal;
+      smoothViews[name] = {
+        stance: ease(cur.stance, goal.stance, dt),
+        conviction: ease(cur.conviction, goal.conviction, dt),
+      };
+    }
+    frameCount += 1;
+    if (frameCount % APPLY_EVERY === 0 && Math.abs(risk - lastAppliedRisk) > 0.0005) {
+      lastAppliedRisk = risk;
+      applyRisk();
+    }
+  }
+  setInterval(frame, FRAME_MS);
 
   /**
    * Convert a scale degree into a MIDI note, wrapping up an octave every 5 degrees.
@@ -261,12 +357,69 @@ const Music = (() => {
   }
 
   /**
+   * Build the Classical preset's synths. Done lazily (first time the style is
+   * chosen) so the Default preset does not pay for synths it never plays.
+   * @returns {void}
+   */
+  function buildClassical() {
+    if (classicalBuilt) return;
+    classicalBuilt = true;
+    // Classical preset synths (all synthesised, no samples).
+    const hall = new Tone.Reverb({ decay: 5, wet: 0.45 }).toDestination();
+    hallReverb = hall;
+
+    // fx cello: bowed saw, slow attack, vibrato, warm low-pass, panned left.
+    const cellovib = new Tone.Vibrato({ frequency: 5, depth: 0.12 }).connect(new Tone.Panner(-0.4).connect(hall));
+    classicalVoices.fx.synth = new Tone.MonoSynth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.35, decay: 0.3, sustain: 0.8, release: 0.9 },
+      filter: { type: "lowpass", Q: 0.5 },
+      filterEnvelope: { attack: 0.4, decay: 0.3, sustain: 0.6, baseFrequency: 110, octaves: 1.8 },
+    }).connect(cellovib);
+    classicalVoices.fx.synth.volume.value = -2;
+
+    // havens strings: detuned saws, very slow attack, dark filter, big reverb.
+    const stringFilter = new Tone.Filter(3000, "lowpass").connect(hall);
+    const stringVibrato = new Tone.Vibrato({ frequency: 5.5, depth: 0.1 }).connect(stringFilter);
+    classicalVoices.havens.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "fatsawtooth", count: 2, spread: 18 },
+      envelope: { attack: 1.4, decay: 0.5, sustain: 0.85, release: 2.5 },
+    }).connect(stringVibrato);
+    classicalVoices.havens.synth.volume.value = -16;
+
+    // commodity piano: FM with a hammer-bright attack that mellows as it decays,
+    // instant attack, no sustain (notes ring and die away), light room reverb, right.
+    const pianoOut = new Tone.Panner(0.3).toDestination();
+    pianoOut.connect(hall);
+    classicalVoices.commodity.synth = new Tone.PolySynth(Tone.FMSynth, {
+      harmonicity: 2.01,
+      modulationIndex: 2.5,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.003, decay: 2.2, sustain: 0, release: 1.2 },
+      modulation: { type: "triangle" },
+      modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.05, release: 0.5 },
+    }).connect(pianoOut);
+    classicalVoices.commodity.synth.volume.value = -8;
+
+    // contrarian pizzicato violin: bright, short Karplus-Strong pluck.
+    classicalVoices.contrarian.synth = new Tone.PluckSynth({
+      attackNoise: 2,
+      dampening: 5000,
+      resonance: 0.85,
+    }).connect(new Tone.Panner(-0.3).connect(hall));
+    classicalVoices.contrarian.synth.volume.value = 2;
+
+    for (const voice of Object.values(classicalVoices)) applyMute(voice);
+    if (built) applyRisk();
+  }
+
+  /**
    * Create the four synths and the shared effects.
    * @returns {void}
    */
   function build() {
     // Master safety: headroom plus a limiter so stacked voices cannot clip the output.
-    Tone.Destination.volume.value = -6;
+    Tone.Destination.volume.value = ducked ? DUCK_DB : MASTER_DB;
     Tone.Destination.chain(new Tone.Limiter(-3));
 
     const reverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
@@ -311,57 +464,14 @@ const Music = (() => {
     }).connect(new Tone.Panner(-0.5).connect(echo));
     voices.contrarian.synth.volume.value = -10;
 
-    // Classical preset synths (all synthesised, no samples).
-    const hall = new Tone.Reverb({ decay: 5, wet: 0.45 }).toDestination();
-    hallReverb = hall;
-
-    // fx cello: bowed saw, slow attack, vibrato, warm low-pass, panned left.
-    const cellovib = new Tone.Vibrato({ frequency: 5, depth: 0.12 }).connect(new Tone.Panner(-0.4).connect(hall));
-    classicalVoices.fx.synth = new Tone.MonoSynth({
-      oscillator: { type: "sawtooth" },
-      envelope: { attack: 0.35, decay: 0.3, sustain: 0.8, release: 0.9 },
-      filter: { type: "lowpass", Q: 0.5 },
-      filterEnvelope: { attack: 0.4, decay: 0.3, sustain: 0.6, baseFrequency: 110, octaves: 1.8 },
-    }).connect(cellovib);
-    classicalVoices.fx.synth.volume.value = -2;
-
-    // havens strings: detuned saws, very slow attack, dark filter, big reverb.
-    const stringFilter = new Tone.Filter(3000, "lowpass").connect(new Tone.Reverb({ decay: 6, wet: 0.5 }).toDestination());
-    const stringVibrato = new Tone.Vibrato({ frequency: 5.5, depth: 0.1 }).connect(stringFilter);
-    classicalVoices.havens.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "fatsawtooth", count: 3, spread: 18 },
-      envelope: { attack: 1.4, decay: 0.5, sustain: 0.85, release: 2.5 },
-    }).connect(stringVibrato);
-    classicalVoices.havens.synth.volume.value = -16;
-
-    // commodity piano: FM with a hammer-bright attack that mellows as it decays,
-    // instant attack, no sustain (notes ring and die away), light room reverb, right.
-    const pianoOut = new Tone.Panner(0.3).toDestination();
-    pianoOut.connect(hall);
-    classicalVoices.commodity.synth = new Tone.PolySynth(Tone.FMSynth, {
-      harmonicity: 2.01,
-      modulationIndex: 2.5,
-      oscillator: { type: "sine" },
-      envelope: { attack: 0.003, decay: 2.2, sustain: 0, release: 1.2 },
-      modulation: { type: "triangle" },
-      modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.05, release: 0.5 },
-    }).connect(pianoOut);
-    classicalVoices.commodity.synth.volume.value = -8;
-
-    // contrarian pizzicato violin: bright, short Karplus-Strong pluck.
-    classicalVoices.contrarian.synth = new Tone.PluckSynth({
-      attackNoise: 2,
-      dampening: 5000,
-      resonance: 0.85,
-    }).connect(new Tone.Panner(-0.3).connect(hall));
-    classicalVoices.contrarian.synth.volume.value = 2;
+    if (styleName === "classical") buildClassical();
 
     // Arrival hit: a thick stack of D in five octaves, played on the downbeat
     // when unison reaches ARRIVAL. Sits on top of the four voices' own D.
     arrivalSynth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "fatsawtooth", count: 3, spread: 20 },
+      oscillator: { type: "fatsawtooth", count: 2, spread: 20 },
       envelope: { attack: 0.01, decay: 0.4, sustain: 0.7, release: 1.5 },
-    }).connect(new Tone.Filter(2800, "lowpass").connect(new Tone.Reverb({ decay: 3, wet: 0.2 }).toDestination()));
+    }).connect(new Tone.Filter(2800, "lowpass").toDestination());
     arrivalSynth.volume.value = -16;
 
     // Risk voice: low D drone (D2 + D3, nothing below laptop-speaker range) and a click.
@@ -394,10 +504,20 @@ const Music = (() => {
     let step = 0;
     Tone.Transport.bpm.value = riskToBpm(risk);
     Tone.Transport.swingSubdivision = "8n";
+    unison = smoothUnison;
     Tone.Transport.scheduleRepeat((time) => {
+      if (step === 0) {
+        // Bar line: the only place patterns may change (style, convergence, swing, arrival).
+        if (pendingStyle) {
+          releaseStyle(styleName);
+          styleName = pendingStyle;
+          pendingStyle = null;
+        }
+        unison = smoothUnison;
+        Tone.Transport.swing = unison >= ARRIVAL ? 0 : swingByStyle[styleName] * (1 - unison);
+      }
       const u = unison;
       const arrived = u >= ARRIVAL;
-      Tone.Transport.swing = arrived ? 0 : swingByStyle[styleName] * (1 - u);
       if (arrived && step === 0) {
         arrivalSynth.triggerAttackRelease(toFreqs(ARRIVAL_MIDIS), "2n", time, 1);
       }
@@ -430,7 +550,7 @@ const Music = (() => {
    * @returns {void}
    */
   function setUnison(value) {
-    unison = Math.min(1, Math.max(0, value));
+    target.unison = Math.min(1, Math.max(0, value));
   }
 
   /**
@@ -440,8 +560,28 @@ const Music = (() => {
    * @returns {void}
    */
   function setRisk(value) {
-    risk = Math.min(1, Math.max(0, value));
-    if (built) applyRisk();
+    target.risk = Math.min(1, Math.max(0, value));
+  }
+
+  /**
+   * Give the engine each analyst's latest stance and conviction (raw values;
+   * a smoothed copy is kept and nothing reads the raw ones for sound).
+   * @param {{slice: string, stance: number, conviction: number}[]} views The `views` of a view message.
+   * @returns {void}
+   */
+  function setViews(views) {
+    for (const v of views) {
+      targetViews[v.slice] = { stance: v.stance, conviction: v.conviction };
+      if (!smoothViews[v.slice]) smoothViews[v.slice] = { stance: v.stance, conviction: v.conviction };
+    }
+  }
+
+  /**
+   * Snapshot of the smoothed values (for the page or for debugging).
+   * @returns {{unison: number, risk: number, views: Object}} Smoothed values.
+   */
+  function getSmoothed() {
+    return { unison: smoothUnison, risk, views: JSON.parse(JSON.stringify(smoothViews)) };
   }
 
   /**
@@ -467,14 +607,26 @@ const Music = (() => {
    * @returns {void}
    */
   function setStyle(name) {
-    if (!styles[name] || name === styleName) return;
-    if (built) {
-      for (const voice of Object.values(styles[styleName])) {
-        if (voice.synth.releaseAll) voice.synth.releaseAll();
-        else if (voice.synth.triggerRelease && !(voice.synth instanceof Tone.PluckSynth)) voice.synth.triggerRelease();
-      }
+    if (!styles[name]) return;
+    if (!built) {
+      styleName = name;
+      return;
     }
-    styleName = name;
+    if (name === "classical") buildClassical();
+    // Switch at the next bar line, so a pattern never changes mid-bar.
+    pendingStyle = name === styleName ? null : name;
+  }
+
+  /**
+   * Release anything still sounding in a style (called when switching away).
+   * @param {string} name Style name.
+   * @returns {void}
+   */
+  function releaseStyle(name) {
+    for (const voice of Object.values(styles[name])) {
+      if (voice.synth.releaseAll) voice.synth.releaseAll();
+      else if (voice.synth.triggerRelease && !(voice.synth instanceof Tone.PluckSynth)) voice.synth.triggerRelease();
+    }
   }
 
   /**
@@ -499,5 +651,16 @@ const Music = (() => {
     if (built) applyRisk();
   }
 
-  return { start, setUnison, setRisk, setMute, setRiskMute, setStyle };
+  /**
+   * Duck the whole mix (or bring it back). Used while an approval card waits.
+   * Safe to call before start().
+   * @param {boolean} on True to duck, false to restore.
+   * @returns {void}
+   */
+  function setDuck(on) {
+    ducked = on;
+    if (built) Tone.Destination.volume.rampTo(on ? DUCK_DB : MASTER_DB, 0.5);
+  }
+
+  return { start, setUnison, setRisk, setViews, getSmoothed, setMute, setRiskMute, setStyle, setDuck };
 })();
