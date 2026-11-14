@@ -4,3 +4,6 @@ python_version = "3.11"
 
 [tool.black]
 target-version = ["py311"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
