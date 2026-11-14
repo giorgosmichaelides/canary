@@ -20,7 +20,9 @@ import math
 import random
 import time
 
-from canary.bus import make_bus
+from typing import Any
+
+from canary.bus import Bus, make_bus
 from canary.sim import CURRENCIES, REPLAYS, Replay, load_prices
 
 TICK_SECONDS = 2.0
@@ -52,7 +54,7 @@ def synthetic_prices(replay: Replay) -> tuple[list[str], dict[str, list[float]]]
     crash = int(len(dates) * 0.75)
     prices = {c: [1.0] for c in CURRENCIES}
     for i in range(1, len(dates)):
-        panic = math.exp(-((i - crash) / 6) ** 2)
+        panic = math.exp(-(((i - crash) / 6) ** 2))
         common = rng.gauss(-0.004 * panic, 0.002 + 0.01 * panic)
         for c in CURRENCIES:
             own = rng.gauss(0, 0.004 * (1 - panic))
@@ -98,7 +100,13 @@ class Tape:
         position: How many days of the replay have been sent.
     """
 
-    def __init__(self, bus, replay: Replay, interval: float = TICK_SECONDS, paused: bool = False) -> None:
+    def __init__(
+        self,
+        bus: Bus,
+        replay: Replay,
+        interval: float = TICK_SECONDS,
+        paused: bool = False,
+    ) -> None:
         """Load the prices and get ready to play.
 
         Args:
@@ -115,7 +123,7 @@ class Tape:
         self.playing = not paused
         self.position = 0
 
-    def tick_message(self, i: int) -> dict:
+    def tick_message(self, i: int) -> dict[str, Any]:
         """Build the tick for one day of the replay.
 
         Args:
@@ -143,13 +151,17 @@ class Tape:
         print(f"tape: {text}", flush=True)
         self.bus.send({"type": "log", "agent": "tape", "text": text})
 
-    def handle(self, msg: dict) -> None:
+    def handle(self, msg: dict[str, Any]) -> None:
         """React to a control message; ignore everything else.
 
         Args:
             msg: Any message from the bus.
         """
-        if msg.get("type") != "control" or msg.get("target") not in (None, "tape", "all"):
+        if msg.get("type") != "control" or msg.get("target") not in (
+            None,
+            "tape",
+            "all",
+        ):
             return
         cmd = msg.get("cmd")
         if cmd == "play" and not self.playing:
@@ -167,7 +179,9 @@ class Tape:
         """Send ticks on time while listening for controls. Runs until Ctrl-C."""
         if self.synthetic:
             self.log("SYNTHETIC DATA: data/fx_daily.csv not found")
-        self.log(f"replay {self.replay.name}: {len(self.days)} days, {'playing' if self.playing else 'paused'}")
+        self.log(
+            f"replay {self.replay.name}: {len(self.days)} days, {'playing' if self.playing else 'paused'}"
+        )
 
         next_tick = time.monotonic()
         while True:
@@ -198,9 +212,15 @@ def main() -> None:
     """Start the tape from the command line."""
     parser = argparse.ArgumentParser(prog="python -m canary.tape")
     parser.add_argument("--replay", choices=sorted(REPLAYS), default="2020")
-    parser.add_argument("--transport", choices=["multicast", "ports"], default="multicast")
-    parser.add_argument("--interval", type=float, default=TICK_SECONDS, help="seconds per trading day")
-    parser.add_argument("--paused", action="store_true", help="wait for a play command before ticking")
+    parser.add_argument(
+        "--transport", choices=["multicast", "ports"], default="multicast"
+    )
+    parser.add_argument(
+        "--interval", type=float, default=TICK_SECONDS, help="seconds per trading day"
+    )
+    parser.add_argument(
+        "--paused", action="store_true", help="wait for a play command before ticking"
+    )
     args = parser.parse_args()
 
     bus = make_bus(args.transport, "tape")
