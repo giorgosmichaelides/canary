@@ -74,8 +74,9 @@ const Score = (() => {
       const old = d.views[v.slice];
       if (!old || (v.ts || 0) >= (old.ts || 0)) d.views[v.slice] = v;
     }
-    d.risk = msg.risk;
-    d.unison = msg.unison;
+    // Agents send risk: null in the first view of each day (risk comes ~250 ms later).
+    if (typeof msg.risk === "number") d.risk = msg.risk;
+    if (typeof msg.unison === "number") d.unison = msg.unison;
     d.rebound = Boolean(msg.rebound);
     if (msg.escalation) d.escalation = msg.escalation;
     requestRender();

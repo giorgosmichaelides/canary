@@ -125,9 +125,16 @@ function onMessage(msg) {
     mergeViews(views);
     markHeard(msg.agent);
     for (const v of views) markHeard(v.by);
-    latest = { risk: msg.risk, unison: msg.unison };
-    setSlider("unison", msg.unison);
-    setSlider("risk", msg.risk);
+    // Agents send risk: null in the first view of each day (the number follows
+    // ~250 ms later), so keep the last known value rather than feeding null on.
+    if (typeof msg.unison === "number") {
+      latest.unison = msg.unison;
+      setSlider("unison", msg.unison);
+    }
+    if (typeof msg.risk === "number") {
+      latest.risk = msg.risk;
+      setSlider("risk", msg.risk);
+    }
     const now = document.getElementById("now");
     now.textContent = msg.date || "";
     if (msg.rebound) {
@@ -141,6 +148,9 @@ function onMessage(msg) {
     Score.addView(msg);
     renderDesk();
     if (msg.escalation) Card.show(msg.escalation, Object.values(book));
+  } else if (msg.type === "card") {
+    // The relay's deduplicated card event (also sent to a browser that just connected).
+    Card.show(msg.card, Object.values(book));
   } else if (msg.type === "hb") {
     markHeard(msg.agent);
     covering[msg.agent] = msg.covering || [];
@@ -169,9 +179,11 @@ function logDecision(d) {
   if (loggedDecisions.has(d.id)) return;
   loggedDecisions.add(d.id);
   Music.decision(d.verdict);
+  Music.hold(2.5); // let the decision chord ring before the music follows the market again
   Score.addDecision(d);
   const li = document.createElement("li");
-  const who = d.decided_by ? ` by ${d.decided_by}` : "";
+  const name = d.by || d.decided_by; // the relay records the judge's name as "by"
+  const who = name ? ` by ${name}` : "";
   li.textContent = `${d.market_date}: ${d.verdict} "${d.action}"${who} in ${d.seconds_to_decide}s${d.reason ? ` (${d.reason})` : ""}`;
   document.getElementById("decisions").prepend(li);
 }
@@ -351,7 +363,8 @@ function init() {
   Card.init(Feed.sendDecision, (isOpen) => {
     Music.setDuck(isOpen);
     if (isOpen) Music.sting();
-    Feed.sendControl(isOpen ? "pause" : "play");
+    // No pause/play from here: the relay pauses the tape when a card opens and
+    // presses play after the decision; the mock holds on the card's day itself.
   });
   document.addEventListener("keydown", onKey);
   setInterval(refreshPanel, 250);

@@ -216,7 +216,8 @@ const Feed = (() => {
    * POST JSON to the relay.
    * @param {string} path Endpoint path.
    * @param {Object} body Request body.
-   * @returns {Promise<boolean>} True if the relay accepted it.
+   * @returns {Promise<true|string>} True if the relay accepted it, else the reason it did not
+   *   (the relay's `{"error": ...}` message, or a network failure).
    */
   async function post(path, body) {
     try {
@@ -225,10 +226,17 @@ const Feed = (() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      return res.ok;
+      if (res.ok) return true;
+      try {
+        const data = await res.json();
+        if (data && data.error) return `Relay: ${data.error}`;
+      } catch (err) {
+        /* no JSON body */
+      }
+      return `Relay answered ${res.status}.`;
     } catch (err) {
       console.warn(`POST ${path} failed`, err);
-      return false;
+      return "Could not reach the relay. Try again.";
     }
   }
 
@@ -236,7 +244,7 @@ const Feed = (() => {
    * Send a human decision. Live: the relay logs and broadcasts it. Mock: the
    * decision is echoed back locally as a `decision` message.
    * @param {{id: string, verdict: string, reason: string, action: string, market_date: string, seconds_to_decide: number}} decision
-   * @returns {Promise<boolean>} True if delivered.
+   * @returns {Promise<true|string>} True if accepted, else why not.
    */
   async function sendDecision(decision) {
     if (mode === "mock") {
@@ -272,7 +280,7 @@ const Feed = (() => {
       }
       return true;
     }
-    return post("/control", { cmd, target });
+    return (await post("/control", { cmd, target })) === true;
   }
 
   return { connect, startMock, sendDecision, sendControl, get mode() { return mode; } };
