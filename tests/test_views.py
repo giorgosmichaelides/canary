@@ -1,10 +1,10 @@
-"""Tests for desk.views."""
+"""Tests for canary.views."""
 
 import math
 
 import pytest
 
-from desk.views import (
+from canary.views import (
     EscalationState,
     View,
     check_escalation,

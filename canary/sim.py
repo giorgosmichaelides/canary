@@ -1,9 +1,9 @@
 """Offline replay: run every analyst over a crash, day by day, with no network.
 
 Usage:
-    python -m desk.sim --replay 2020
-    python -m desk.sim --replay 2024
-    python -m desk.sim --replay 2020 --json > web/replay.json
+    python -m canary.sim --replay 2020
+    python -m canary.sim --replay 2024
+    python -m canary.sim --replay 2020 --json > web/replay.json
 
 Same data in, same output out, every time. Systems' agents should produce
 the same numbers live; scripts/measure.py builds the lead-time table on top
@@ -18,9 +18,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from desk.explain import load_reasons, reason
+from canary.explain import load_reasons, reason
 
-from desk.signals import (
+from canary.signals import (
     CORRELATION_WINDOW,
     RISK_BASKET,
     basket,
@@ -31,7 +31,7 @@ from desk.signals import (
     risk_score,
     unison,
 )
-from desk.views import (
+from canary.views import (
     SLICES,
     TEMPERAMENTS,
     ZSCORE_WINDOW,
@@ -75,7 +75,7 @@ REPLAYS: dict[str, Replay] = {
 
 @dataclass(frozen=True)
 class Day:
-    """Everything the desk concludes on one trading day.
+    """Everything Canary concludes on one trading day.
 
     Attributes:
         date: Market date, "YYYY-MM-DD".

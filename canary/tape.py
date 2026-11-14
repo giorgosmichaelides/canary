@@ -8,8 +8,8 @@ It knows nothing about the analysts. It only listens for control messages:
 play, pause and restart.
 
 Usage:
-    python -m desk.tape
-    python -m desk.tape --replay 2024 --paused --transport ports
+    python -m canary.tape
+    python -m canary.tape --replay 2024 --paused --transport ports
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ import math
 import random
 import time
 
-from desk.bus import make_bus
-from desk.sim import CURRENCIES, REPLAYS, Replay, load_prices
+from canary.bus import make_bus
+from canary.sim import CURRENCIES, REPLAYS, Replay, load_prices
 
 TICK_SECONDS = 2.0
 
@@ -102,7 +102,7 @@ class Tape:
         """Load the prices and get ready to play.
 
         Args:
-            bus: A bus from ``desk.bus.make_bus``.
+            bus: A bus from ``canary.bus.make_bus``.
             replay: Which crash to replay.
             interval: Seconds between ticks.
             paused: Start paused and wait for a play command.
@@ -196,7 +196,7 @@ class Tape:
 
 def main() -> None:
     """Start the tape from the command line."""
-    parser = argparse.ArgumentParser(prog="python -m desk.tape")
+    parser = argparse.ArgumentParser(prog="python -m canary.tape")
     parser.add_argument("--replay", choices=sorted(REPLAYS), default="2020")
     parser.add_argument("--transport", choices=["multicast", "ports"], default="multicast")
     parser.add_argument("--interval", type=float, default=TICK_SECONDS, help="seconds per trading day")

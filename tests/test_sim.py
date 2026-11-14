@@ -1,11 +1,11 @@
-"""Tests for desk.sim, including the real 2020 replay."""
+"""Tests for canary.sim, including the real 2020 replay."""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from desk.sim import REPLAYS, load_prices, report, run, to_json
+from canary.sim import REPLAYS, load_prices, report, run, to_json
 
 
 def test_load_prices_reads_the_csv(tmp_path: Path) -> None:

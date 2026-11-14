@@ -13,10 +13,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Let `python scripts/measure.py` import the desk package from the repo root.
+# Let `python scripts/measure.py` import the canary package from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from desk.sim import DATA_FILE, REPLAYS, Day, Replay, load_prices, run  # noqa: E402
+from canary.sim import DATA_FILE, REPLAYS, Day, Replay, load_prices, run  # noqa: E402
 
 STOPS = (0.05, 0.075, 0.10)  # stop-loss rules: sell after a 5%, 7.5% or 10% fall
 
