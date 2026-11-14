@@ -16,9 +16,18 @@ from pathlib import Path
 # Let `python scripts/measure.py` import the canary package from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from canary.sim import DATA_FILE, REPLAYS, Day, Replay, load_prices, run  # noqa: E402
+from canary.sim import (  # noqa: E402
+    DATA_FILE,
+    MIN_HISTORY,
+    REPLAYS,
+    Day,
+    Replay,
+    load_prices,
+    run,
+)
 
 STOPS = (0.05, 0.075, 0.10)  # stop-loss rules: sell after a 5%, 7.5% or 10% fall
+WARMUP_PRICES = 40  # a card with less history than this is labelled "warm-up"
 
 
 @dataclass(frozen=True)
@@ -121,6 +130,23 @@ def format_row(row: Row) -> str:
     return f"| {row.rule} | {row.fired} | {timing} | {row.drawdown_then:+.1%} |"
 
 
+def describe_other_card(day: Day, days: list[Day]) -> str:
+    """Name a card that is not the measured one.
+
+    Cards fired with under WARMUP_PRICES days of history are labelled
+    "warm-up": "normal" volatility is still guessed from too few days.
+
+    Args:
+        day: The day the card fired.
+        days: Output of sim.run().
+
+    Returns:
+        The date, plus " (warm-up)" if it fired during the warm-up.
+    """
+    history = days.index(day) + MIN_HISTORY
+    return day.date + (" (warm-up)" if history < WARMUP_PRICES else "")
+
+
 def report(replay: Replay, days: list[Day]) -> str:
     """The lead-time table for one replay, as markdown.
 
@@ -142,7 +168,7 @@ def report(replay: Replay, days: list[Day]) -> str:
         *(format_row(row) for row in rows),
         "",
         "Other cards (false alarms): "
-        + (", ".join(day.date for day in others) or "none"),
+        + (", ".join(describe_other_card(day, days) for day in others) or "none"),
     ]
     return "\n".join(lines)
 
