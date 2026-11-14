@@ -6,13 +6,24 @@ Companion to `CLAUDE.md` (which wins on any conflict). Read the section you are 
 
 Fed H.10 daily rates, computed by `scripts/measure.py`:
 
+The basket is the risk basket (AUD, CAD, NOK, equal weight, from 2019-11-01). Only firings inside the replay window count.
+
 | Rule | Fired | Trading days before 20 Mar low | Basket drawdown then |
 |---|---|---|---|
 | The Canary card | 2 Mar | 14 | −5.2% |
 | 5% drawdown stop | 26 Feb | 17 | −5.3% |
-| 7.5% / 10% drawdown stop | 12 Mar | 6 | −10.3% |
+| 7.5% / 10% drawdown stop | 12 Mar | 6 | −10.4% |
 
-Say: 8 trading days ahead of a 7.5–10% stop, 3 days **behind** a tight 5% stop. Cards on 8 Jan and 31 Jan are false alarms. Thresholds were tuned on 2020. Out-of-sample: August 2024 yen carry unwind (`2024-07-01` to `2024-08-30`), same thresholds, report whatever it shows.
+Say: 8 trading days ahead of a 7.5–10% stop, 3 days **behind** a tight 5% stop. Cards on 8 Jan and 31 Jan are false alarms. Thresholds were tuned on 2020.
+
+**Out-of-sample:** August 2024 yen carry unwind (`2024-07-01` to `2024-08-30`), same thresholds:
+
+| Rule | Fired | Trading days before 5 Aug low | Basket drawdown then |
+|---|---|---|---|
+| The Canary card | 22 Aug | 13 **after** | −0.6% |
+| 5% / 7.5% / 10% drawdown stop | never | – | – |
+
+The basket only fell 3.2%, so there was no early warning. Say so. (A 31 May 2024 card is before the window, with only 20 days of history.)
 
 ## 2. Timing and data
 
@@ -40,11 +51,20 @@ Temperament = momentum window: `fx` 3 days (nervous), `havens` 8 days (calm), `c
 - `divergence` = clamp((havens_stance × trust_havens − commodity_stance × trust_commodity) / 2, 0, 1)
 - `risk` = 0.8 × max(divergence, unison) + 0.2 × (risk_basket_drawdown / 10%)
 
-**Lock the correlation window in hours 0–2 and do not touch it.** Correlation peaks at 0.68 against a 0.65 saturation point; any later change can lose full unison.
+**Lock the correlation window in hours 0–2 and do not touch it.** Locked at 10 days (`signals.CORRELATION_WINDOW`). Correlation reaches 0.68 on 18 Mar against a 0.65 saturation point (and 0.68–0.70 again on 30 Mar and 6–8 Apr, so the band merges again near the end); any later change can lose full unison.
+
+**As implemented** (`desk/signals.py`, `desk/views.py`):
+- `normal_vol` = std dev of the slice basket's daily returns over the last 60 days (fewer at the start of the data); `recent_vol` = last 10 days.
+- Each slice is judged on its equal-weight basket. The contrarian's own slice is all 7 currencies; it scans fx, havens and commodity baskets for the largest |z| and reports that group in `about`.
+- `risk_basket_drawdown` is the AUD/CAD/NOK basket's fall from its peak since the start of the data. `risk` is capped at 1.
+- Rebound: the risk basket's 20-day z-score was ≤ −1.8 on any of the last 5 trading days, and its 3-day move is ≥ +1 normal move. Fires 3–4 Mar and 25–26 Mar 2020.
+- A day can be judged once there are 21 prices of history.
 
 ## 4. Escalation
 
 Raise when `risk ≥ 0.50` for 2 consecutive days; re-arm only after `risk < 0.30`. Action: cut the slice with the lowest stance by 30%, or 50% if `risk ≥ 0.75`. Votes on a risk-on axis (havens flipped): > +0.15 dissent, < −0.15 support, else neutral.
+
+As implemented: only fx, havens and commodity can be cut (the contrarian's slice is not a holding); ties go to the alphabetically first slice so every analyst proposes the same action. The havens flip uses each view's `about`, so a contrarian betting against havens counts as risk-on. 2 Mar 2020: "Cut commodity by 30%", fx and contrarian dissent, havens and commodity support.
 
 Every analyst evaluates this rule and, when it fires, includes `escalation` with `id = "<replay>:<date>"` in its view. The relay shows one card per id, so if any analyst is alive the card appears.
 
