@@ -147,19 +147,51 @@ const Music = (() => {
     return BPM + (MIN_BPM - BPM) * r;
   }
 
+  /** Calm mix: how much quieter (dB) and how muffled (low-pass Hz) the music is at low risk. */
+  const CALM_DB = -7;
+  const CALM_CUTOFF = 1400;
+  const OPEN_CUTOFF = 18000;
+
+  /** Risk where the music starts to wake up, and where it is fully loud and bright. */
+  const STRESS_FROM = 0.25;
+  const STRESS_FULL = 0.75;
+
+  /** Low-pass and gain after the music bus that make calm markets sit back. Built in build(). */
+  let calmFilter = null;
+  let calmGain = null;
+
+  /**
+   * How stressed the market sounds, 0 (calm) to 1 (full alarm), from risk.
+   * Flat below STRESS_FROM so calm days stay relaxed, then an S-curve up to STRESS_FULL.
+   * @param {number} r Risk, 0..1.
+   * @returns {number} Stress, 0..1.
+   */
+  function stressLevel(r) {
+    const x = Math.min(1, Math.max(0, (r - STRESS_FROM) / (STRESS_FULL - STRESS_FROM)));
+    return x * x * (3 - 2 * x);
+  }
+
   /**
    * Push the current risk to the drone gain and tempo (smoothed to avoid zipper noise).
    * @returns {void}
    */
   function applyRisk() {
-    // Drone: silent at risk 0, rising to about -5 dB at risk 1 (cubed, so it swells at the top).
-    droneGain.gain.rampTo(riskMuted ? 0 : 0.55 * risk ** 3, 0.1);
+    const stress = stressLevel(risk);
+
+    // Calm markets: softer and slightly muffled. Stress opens the sound up and brings it forward.
+    if (calmFilter) {
+      calmFilter.frequency.rampTo(CALM_CUTOFF * (OPEN_CUTOFF / CALM_CUTOFF) ** stress, 0.1);
+      calmGain.gain.rampTo(Tone.dbToGain(CALM_DB * (1 - stress)), 0.1);
+    }
+
+    // Drone: silent when calm, loud in a crash.
+    droneGain.gain.rampTo(riskMuted ? 0 : 0.6 * stress ** 2, 0.1);
     Tone.Transport.bpm.rampTo(riskToBpm(risk), 0.1);
 
     // Ominous layers. Each is silent in calm markets and grows as risk climbs.
     // Tritone (G#2 against the D drone): enters around risk 0.3, swells to full.
     const dread = Math.max(0, (risk - 0.3) / 0.7);
-    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.2 * dread ** 2, 0.1);
+    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.25 * Math.max(dread, stress) ** 2, 0.1);
     // Sub rumble (filtered brown noise): rises from risk 0.2.
     rumbleGain.gain.rampTo(riskMuted ? 0 : 0.3 * Math.max(0, (risk - 0.2) / 0.8) ** 2, 0.1);
     // The room gets bigger and the music recedes into it.
@@ -816,7 +848,10 @@ const Music = (() => {
     Tone.Destination.chain(new Tone.Limiter(-3));
 
     // Music bus (ducks under the card) and the reverb that untrusted voices drift into.
-    musicBus = new Tone.Gain(ducked ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1).toDestination();
+    // Calm shaper sits after the bus: quiet and muffled at low risk, open at high risk.
+    calmGain = new Tone.Gain(Tone.dbToGain(CALM_DB)).toDestination();
+    calmFilter = new Tone.Filter(CALM_CUTOFF, "lowpass").connect(calmGain);
+    musicBus = new Tone.Gain(ducked ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1).connect(calmFilter);
     trustReverb = new Tone.Reverb({ decay: 6, wet: 1 }).connect(musicBus);
 
     // Event sounds go straight to the output, so they cut through the duck.
@@ -945,7 +980,7 @@ const Music = (() => {
         arrivalSynth.triggerAttackRelease(toFreqs(ARRIVAL_MIDIS), "2n", time, 1);
       }
       if (step % 4 === 0 && !riskMuted) {
-        clickSynth.triggerAttackRelease("A5", "32n", time, 0.03 + 0.97 * risk ** 3);
+        clickSynth.triggerAttackRelease("A5", "32n", time, 0.03 + 0.97 * stressLevel(risk) ** 2);
       }
       if (barRebound) {
         // Rebound: a 16th-note pentatonic climb over two octaves (D4 to D6), ignoring unison.

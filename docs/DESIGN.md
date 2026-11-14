@@ -149,11 +149,11 @@ At hours 6 and 10, stop and run everything together even if parts are unfinished
 
 Opening line, before you press play: "Nobody can see correlation on a price chart, and nobody can watch a chart all day. Canary turns correlation into sound. A trader can leave it running in the background, and someone who can't see the screen can follow it too."
 
-Blind test: press **B** right after Start audio to black out the screen, and ask the judges to guess calm or crash by ear. Do it twice, once early (calm) and once at the peak (crash). Don't press B around 2 Mar, because the blackout would hide the card.
+Blind test: press **B** on about 6 Feb to black out the screen (3 Feb has risk 0.60, so the first few seconds sound tense), and ask the judges to guess calm or crash by ear. Do it twice, once early (calm) and once at the peak (crash). Don't press B around 2 Mar, because the blackout would hide the card.
 
 | Replay date | ~Seconds | What happens | What you say |
 |---|---|---|---|
-| 3–7 Feb | 0–8 | Screen black (B). Four separate rhythms | "No charts. Calm or crash?" A judge clicks a guess and the screen reveals calm. Press B to close |
+| 3–10 Feb | 0–12 | 3 Feb sounds tense for a few seconds, then settles. On about 6 Feb, screen black (B). Four separate, soft rhythms | "No charts. Calm or crash?" A judge clicks a guess and the screen reveals calm. Press B to close |
 | 10–21 Feb | 10–28 | Correlation 0.1–0.25; four rhythms, four registers | "Each analyst plays its own market. This is what diversification sounds like. Remember it." |
 | ~24–25 Feb | 30–32 | **Press K.** Fx fades into reverb, pad picks up the bass line; parts still distinct | "We just killed an analyst. Nobody told the others." |
 | 27–28 Feb | 34–38 | Havens bid, commodity FX sold; drone grows | "Money is moving to safety." |

@@ -360,6 +360,8 @@
    * @returns {void}
    */
   function onCard(card) {
+    // The replay waits for this card's decision, so never leave it hidden under the blackout.
+    blind.hidden = true;
     if (!state.card || state.card.id !== card.id) {
       state.card = {
         id: card.id, date: card.date, action: card.action, slice: card.slice, cut: card.cut, risk: card.risk,
