@@ -6,7 +6,12 @@ This file is the source of truth. Long detail (formulas, protocol, demo script, 
 
 ## Current status
 
-The repo currently holds only `CLAUDE.md`, `README.md` and `web/` (`index.html`, `app.js`, `vendor/tone.js`; the sound person has done this). `desk/`, `data/`, `scripts/` and `tests/` are **not created yet**. Layout below is the target.
+- **Quant: done.** `data/fx_daily.csv` (cached), `desk/signals.py`, `views.py`, `sim.py`, `explain.py`, `scripts/fetch_fx.py`, `scripts/measure.py`, tests in `tests/`. `python -m desk.sim --replay 2020` reproduces the demo (card on 2 Mar, rebounds 3–4 and 25–26 Mar).
+- **Systems:** `desk/bus.py` done; `agent.py`, `tape.py`, `relay.py`, `run.py` to build. Agents should call `views.slice_view` / `contrarian_view`, `signals.*`, `views.check_escalation` / `escalation`, `views.rebound` and `explain.reason`; their numbers must match `desk.sim`.
+- **Sound and stage:** `web/index.html`, `app.js`, `music.js`, `vendor/tone.js` exist; `score.js` to build.
+- Not built: `data/reasons.json` and `scripts/pregenerate_reasons.py` (Claude lines are optional; templates are used without them).
+
+Layout below is the target.
 
 ## What we are building
 
@@ -28,7 +33,8 @@ The repo currently holds only `CLAUDE.md`, `README.md` and `web/` (`index.html`,
 - The music does **not** predict anything. It makes correlation, invisible on a price chart, audible.
 - All currencies are quoted in USD, so correlation near one in March 2020 means everything sold off against the dollar, havens included. Pitch: "In March 2020 there was one trade: buy dollars. This is what that sounds like."
 - Lead time is only what `scripts/measure.py` prints (table in `docs/DESIGN.md`). Say: ahead of a 7.5–10% stop, **behind** a tight 5% stop. Cards on 8 Jan and 31 Jan are **false alarms**; call them that. Thresholds were tuned on 2020.
-- Run 2024-07-01 to 2024-08-30 (yen unwind) with the **same thresholds** and report whatever it shows, including "no card".
+- Run 2024-07-01 to 2024-08-30 (yen unwind) with the **same thresholds** and report whatever it shows, including "no card". **Result:** no early warning. The only card is 22 Aug, 13 trading days *after* the 5 Aug low; no stop fired (the commodity basket fell only 3.2%). Say: "Same thresholds on 2024: no early warning. That crash was in the yen, not commodity currencies."
+- High unison means "everything moved together against the dollar", not "crash": late August 2024 reaches full unison because the dollar weakened across the board.
 - Lead with the sound of unison, not the lead-time number. Re-run `measure.py` after any code change and update the table if numbers move.
 
 ## Architecture
@@ -54,13 +60,20 @@ Messages are small JSON datagrams with a `type`: `tick`, `view`, `hb`, `control`
 
 ```json
 {"type":"view","agent":"havens","ts":1794667969.5,"date":"2020-02-25",
- "covering":["fx"],"risk":0.41,"unison":0.18,
- "views":[{"slice":"havens","by":"havens","ts":1794667969.5,"stance":0.92,"conviction":1.0,"stress":0.4,"reason":"..."},
-          {"slice":"fx","by":"havens","ts":1794667969.5,"stance":0.51,"conviction":0.5,"stress":0.2,"reason":"Covering FX. ..."}],
- "escalation": {"id":"2020:2020-03-02", "...": "optional, repeated until a decision arrives"}}
+ "covering":["fx"],"risk":0.41,"unison":0.18,"rebound":false,
+ "views":[{"slice":"havens","by":"havens","about":"havens","ts":1794667969.5,"stance":0.92,"conviction":1.0,"stress":0.4,"reason":"..."},
+          {"slice":"fx","by":"havens","about":"fx","ts":1794667969.5,"stance":0.51,"conviction":0.5,"stress":0.2,"reason":"Covering fx. ..."}],
+ "escalation": {"id":"2020:2020-03-02","date":"2020-03-02","risk":0.64,
+                "rule":"Risk 0.64 >= 0.50 for 2 days in a row","action":"Cut commodity by 30%",
+                "slice":"commodity","cut":0.3,
+                "votes":[{"slice":"fx","by":"fx","vote":"dissent"}, "..."]}}
 ```
 
 Field ranges: `stance` −1..1, `conviction` 0..1, `stress` 0..1, `risk` 0..1, `unison` 0..1.
+- `about`: which group the stance is about. Same as `slice`, except the contrarian names the group it bets against (needed for votes). From `views.slice_view` / `contrarian_view`.
+- `rebound`: true on rebound days (plays the rebound solo). From `views.rebound(prices)`.
+- `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`.
+- `reason`: from `explain.reason(view, date, cache)`.
 **Anyone changing `view` fields must tell the team first**, and update this section in the same commit. Agree the fields in hour 1.
 
 ## Layout (target)
@@ -127,6 +140,7 @@ One instrument per **analyst**, not per slice; that is what makes a takeover aud
 - Python: Google-style docstrings (Args / Returns / Raises) on every module, class and function; type hints throughout. Write them as you go.
 - JS: JSDoc on every function.
 - `signals.py` and `views.py` are pure and covered by pytest, as are the takeover ring and escalation dedupe.
+- Python tooling (dev only, `requirements-dev.txt`): `black` formatting and `mypy` in strict mode (config in `pyproject.toml`). Run `black . && mypy desk tests scripts && pytest` before merging.
 - Claude lines use `claude-haiku-5-5`; API key in `.env`, **never committed** (keep `.env` in `.gitignore`).
 
 ## Git workflow
@@ -139,9 +153,11 @@ One instrument per **analyst**, not per slice; that is what makes a takeover aud
 ## Commands
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt  # once
 python -m desk.run                    # start everything, open http://localhost:8000
-python -m desk.sim --replay 2020      # offline replay, prints cards
+python -m desk.sim --replay 2020      # offline replay, prints every day and card
 python scripts/measure.py             # lead-time table, 2020 and 2024
-python scripts/pregenerate_reasons.py # needs ANTHROPIC_API_KEY
-pytest
+python scripts/fetch_fx.py            # re-download data/fx_daily.csv (needs internet; not at demo time)
+python scripts/pregenerate_reasons.py # optional, not built yet; needs ANTHROPIC_API_KEY
+black . && mypy desk tests scripts && pytest
 ```
