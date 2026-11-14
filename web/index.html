@@ -5,42 +5,191 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Canary</title>
   <style>
-    body { margin: 0; background: #0b0d12; color: #e8e8ee; font-family: system-ui, sans-serif;
-           display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 1rem; }
-    button { font-size: 1.2rem; padding: .8rem 1.6rem; border: 1px solid #5b6cff; background: #1a1f3a;
-             color: inherit; border-radius: 8px; cursor: pointer; }
+    :root { --bg: #0b0d12; --panel: #12151d; --line: #232733; --text: #e8e8ee; --muted: #9aa0ad;
+            --accent: #5b6cff; --red: #ff7b72; --green: #5fd38d; --amber: #ffb347; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+    button { font: inherit; padding: .35rem .8rem; border: 1px solid var(--accent); background: #1a1f3a;
+             color: inherit; border-radius: 6px; cursor: pointer; }
     button:hover { background: #262d58; }
-    #status { opacity: .7; font-size: .9rem; }
-    footer { position: fixed; bottom: .5rem; font-size: .75rem; opacity: .5; }
+    button.small { font-size: .75rem; padding: .2rem .5rem; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; padding: .8rem 16px;
+             border-bottom: 1px solid var(--line); }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header .pitch { color: var(--muted); font-size: .9rem; }
+    #start-audio { font-size: 1rem; padding: .5rem 1.1rem; }
+    #status, #feed-status { color: var(--muted); font-size: .8rem; }
+    #now { margin-left: auto; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+    #now .rebound { color: var(--green); font-size: .9rem; margin-left: .4rem; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; padding: 16px; }
+    @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+    section, aside { min-width: 0; }
+    .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .8rem; margin-bottom: 16px; }
+    .box h2 { margin: 0 0 .6rem; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    #score { display: block; width: 100%; cursor: pointer; }
+    #score-info { min-height: 1.4em; font-size: .85rem; color: var(--muted); margin-top: .4rem; }
+    #desk { border-collapse: collapse; font-size: .82rem; width: 100%; }
+    #desk td { padding: .25rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    #desk td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    #desk td.line { color: var(--muted); }
+    .meter { margin-bottom: .55rem; font-size: .8rem; }
+    .meter .row { display: flex; justify-content: space-between; }
+    .meter .bar { position: relative; height: 8px; background: #1b1f2a; border-radius: 4px; overflow: hidden; margin-top: .2rem; }
+    .meter .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); transition: width .3s; }
+    .meter .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; left: 50%; }
+    #m-risk .fill { background: var(--amber); }
+    #analysts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+    #analysts li { display: grid; grid-template-columns: 5.6rem 1fr; gap: .2rem .5rem; align-items: center; font-size: .8rem; }
+    #analysts .name { font-weight: 600; }
+    #analysts .status { font-size: .7rem; border: 1px solid; border-radius: 999px; padding: 0 .45rem; justify-self: start; }
+    #analysts .status.live { color: var(--green); }
+    #analysts .status.covering { color: var(--accent); }
+    #analysts .status.down { color: var(--red); }
+    #analysts .status.degraded { color: var(--amber); }
+    #analysts .trust { height: 5px; background: #1b1f2a; border-radius: 3px; overflow: hidden; grid-column: 1 / -1; }
+    #analysts .trust div { height: 100%; background: var(--green); width: 100%; transition: width .3s; }
+    #analysts .buttons { grid-column: 1 / -1; display: flex; gap: .3rem; flex-wrap: wrap; }
+    .hint { font-size: .72rem; color: var(--muted); margin: .5rem 0 0; }
+    #decisions, #desk-log { font-size: .78rem; list-style: none; padding: 0; margin: 0; max-height: 11rem; overflow: auto; }
+    #decisions li, #desk-log li { padding: .2rem 0; border-bottom: 1px solid var(--line); }
+    #desk-log li { color: var(--muted); }
+    details summary { cursor: pointer; color: var(--muted); font-size: .8rem; }
+    .tuning { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; font-size: .85rem; }
+    .tuning input[type=range] { width: 100%; }
+    #voices { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: .2rem; }
+    footer { padding: .5rem 16px 1rem; font-size: .75rem; color: var(--muted); }
+    #card[hidden] { display: none; }
+    #card { position: fixed; inset: 0; background: rgba(5, 6, 10, .75); display: flex;
+            align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+    #card .panel { background: #14171f; border: 1px solid #c0392b; border-radius: 12px;
+                   padding: 1.5rem; width: min(640px, 100%); max-height: 92vh; overflow: auto;
+                   display: flex; flex-direction: column; gap: .8rem; outline: none; }
+    #card h2 { margin: 0; font-size: 1.9rem; }
+    #card .tag { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; opacity: .6; margin: 0; }
+    #card ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .4rem; }
+    #card li { display: grid; grid-template-columns: 5.5rem 6rem 1fr; gap: .5rem; align-items: baseline; font-size: .85rem; }
+    .chip { border-radius: 999px; padding: .1rem .6rem; text-align: center; font-size: .75rem; border: 1px solid; }
+    .chip.support { color: var(--green); border-color: var(--green); }
+    .chip.neutral { color: #aab; border-color: #667; }
+    .chip.dissent { color: var(--red); border-color: var(--red); }
+    #card input, #card textarea { background: var(--bg); color: inherit; border: 1px solid #333;
+                                  border-radius: 6px; padding: .5rem; font: inherit; }
+    #card .buttons { display: flex; gap: .8rem; }
+    #card .buttons button { flex: 1; font-size: 1.1rem; padding: .7rem; }
+    #card-approve { border-color: var(--green); background: #12301f; }
+    #card-veto { border-color: var(--red); background: #3a1614; }
+    #card-error { color: var(--red); min-height: 1.2em; font-size: .85rem; margin: 0; }
+    #card-open-for { font-size: .75rem; opacity: .6; }
   </style>
 </head>
 <body>
-  <h1>Canary</h1>
-  <button id="start-audio" type="button">Start audio</button>
-  <div id="status">Audio not started.</div>
-  <label for="unison">Unison <output id="unison-readout">0.00</output></label>
-  <input id="unison" type="range" min="0" max="1" step="0.01" value="0" style="width: min(480px, 80vw)">
-  <label for="risk">Risk <output id="risk-readout">0.00</output></label>
-  <input id="risk" type="range" min="0" max="1" step="0.01" value="0" style="width: min(480px, 80vw)">
-  <label for="style">Style
-    <select id="style">
-      <option value="default" selected>Default</option>
-      <option value="classical">Classical</option>
-    </select>
-  </label>
-  <fieldset id="voices" style="border: 1px solid #333; border-radius: 8px;">
-    <legend>Mute voices</legend>
-    <label><input type="checkbox" data-voice="fx"> fx (bass, left)</label>
-    <label><input type="checkbox" data-voice="havens"> havens (pad)</label>
-    <label><input type="checkbox" data-voice="commodity"> commodity (rock, right)</label>
-    <label><input type="checkbox" data-voice="contrarian"> contrarian (pluck)</label>
-    <label><input type="checkbox" id="mute-risk"> risk (drone + click)</label>
-  </fieldset>
-  <div id="canary-chart"></div>
+  <header>
+    <h1>Canary</h1>
+    <span class="pitch">A trading desk you can hear</span>
+    <button id="start-audio" type="button">Start audio</button>
+    <span id="status">Audio not started.</span>
+    <span id="feed-status">connecting...</span>
+    <div id="now">&nbsp;</div>
+  </header>
+
+  <main class="layout">
+    <section>
+      <div class="box">
+        <h2>Score</h2>
+        <canvas id="score" aria-label="Score: one staff per analyst, one note per day"></canvas>
+        <div id="score-info">Click a note for its date, author, numbers and reason.</div>
+      </div>
+      <div class="box">
+        <h2>Price vs unison</h2>
+        <div id="canary-chart"></div>
+      </div>
+      <div class="box">
+        <h2>Latest view per slice</h2>
+        <table id="desk" aria-label="Latest view per slice"><tbody></tbody></table>
+      </div>
+    </section>
+
+    <aside>
+      <div class="box">
+        <h2>Desk</h2>
+        <div class="meter" id="m-unison"><div class="row"><span>Unison (correlation)</span><output>0.00</output></div><div class="bar"><div class="fill"></div></div></div>
+        <div class="meter" id="m-risk"><div class="row"><span>Risk</span><output>0.00</output></div><div class="bar"><div class="fill"></div><div class="mark" title="0.50: card threshold"></div></div></div>
+        <div class="meter" id="m-tempo"><div class="row"><span>Tempo</span><output>96 bpm</output></div><div class="bar"><div class="fill"></div></div></div>
+      </div>
+
+      <div class="box">
+        <h2>Analysts</h2>
+        <ul id="analysts"></ul>
+        <p class="hint">Keys: K kill fx, R revive fx.</p>
+      </div>
+
+      <div class="box">
+        <h2>Decisions</h2>
+        <ul id="decisions" aria-label="Decision log"></ul>
+      </div>
+
+      <div class="box">
+        <h2>Desk log</h2>
+        <ul id="desk-log" aria-label="Desk log"></ul>
+      </div>
+
+      <div class="box">
+        <details>
+          <summary>Tuning (manual controls)</summary>
+          <div class="tuning">
+            <label for="unison">Unison <output id="unison-readout">0.00</output></label>
+            <input id="unison" type="range" min="0" max="1" step="0.01" value="0">
+            <label for="risk">Risk <output id="risk-readout">0.00</output></label>
+            <input id="risk" type="range" min="0" max="1" step="0.01" value="0">
+            <label for="style">Style
+              <select id="style">
+                <option value="default" selected>Default</option>
+                <option value="classical">Classical</option>
+                <option value="metal">Metal</option>
+                <option value="phonk">Phonk</option>
+              </select>
+            </label>
+            <fieldset id="voices">
+              <legend>Mute voices</legend>
+              <label><input type="checkbox" data-voice="fx"> <span data-label="fx">fx</span></label>
+              <label><input type="checkbox" data-voice="havens"> <span data-label="havens">havens</span></label>
+              <label><input type="checkbox" data-voice="commodity"> <span data-label="commodity">commodity</span></label>
+              <label><input type="checkbox" data-voice="contrarian"> <span data-label="contrarian">contrarian</span></label>
+              <label><input type="checkbox" id="mute-risk"> risk (drone + click)</label>
+            </fieldset>
+          </div>
+        </details>
+      </div>
+    </aside>
+  </main>
+
   <footer>Historical replay of a hypothetical portfolio, for demonstration only.</footer>
+
+  <div id="card" role="dialog" aria-modal="true" aria-labelledby="card-action" hidden>
+    <div class="panel" tabindex="-1">
+      <p class="tag">Decided by code</p>
+      <h2 id="card-action"></h2>
+      <div id="card-rule"></div>
+      <div id="card-numbers"></div>
+      <p class="tag">Explained by AI (one line each; the numbers above decided)</p>
+      <ul id="card-votes"></ul>
+      <input id="card-name" type="text" placeholder="Your name (required)" autocomplete="name">
+      <textarea id="card-reason" rows="2" placeholder="Reason (required to veto)"></textarea>
+      <p id="card-error" role="alert"></p>
+      <div class="buttons">
+        <button id="card-approve" type="button">Approve</button>
+        <button id="card-veto" type="button">Veto</button>
+      </div>
+      <span id="card-open-for"></span>
+    </div>
+  </div>
 
   <script src="vendor/tone.js"></script>
   <script src="music.js"></script>
+  <script src="mock/replay2020.js" onerror="console.warn('no mock recording')"></script>
+  <script src="feed.js"></script>
+  <script src="card.js"></script>
+  <script src="score.js"></script>
   <script src="app.js"></script>
   <script src="chart.js"></script>
 </body>
