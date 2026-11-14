@@ -128,7 +128,8 @@ const Card = (() => {
     timer = setInterval(() => {
       el("card-open-for").textContent = `open for ${Math.round((performance.now() - openedAt) / 1000)}s`;
     }, 500);
-    el("card-name").focus();
+    // Focus the panel, not a text field, so the presenter's K / R keys still work while a judge reads.
+    document.querySelector("#card .panel").focus();
     onOpenChange(true);
   }
 
