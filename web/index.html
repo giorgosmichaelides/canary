@@ -20,6 +20,22 @@
   <div id="status">Audio not started.</div>
   <label for="unison">Unison <output id="unison-readout">0.00</output></label>
   <input id="unison" type="range" min="0" max="1" step="0.01" value="0" style="width: min(480px, 80vw)">
+  <label for="risk">Risk <output id="risk-readout">0.00</output></label>
+  <input id="risk" type="range" min="0" max="1" step="0.01" value="0" style="width: min(480px, 80vw)">
+  <label for="style">Style
+    <select id="style">
+      <option value="default" selected>Default</option>
+      <option value="classical">Classical</option>
+    </select>
+  </label>
+  <fieldset id="voices" style="border: 1px solid #333; border-radius: 8px;">
+    <legend>Mute voices</legend>
+    <label><input type="checkbox" data-voice="fx"> fx (bass, left)</label>
+    <label><input type="checkbox" data-voice="havens"> havens (pad)</label>
+    <label><input type="checkbox" data-voice="commodity"> commodity (rock, right)</label>
+    <label><input type="checkbox" data-voice="contrarian"> contrarian (pluck)</label>
+    <label><input type="checkbox" id="mute-risk"> risk (drone + click)</label>
+  </fieldset>
   <footer>Historical replay of a hypothetical portfolio, for demonstration only.</footer>
 
   <script src="vendor/tone.js"></script>
