@@ -72,6 +72,7 @@ Messages are small JSON datagrams with a `type`: `tick`, `view`, `hb`, `control`
 
 Field ranges: `stance` −1..1, `conviction` 0..1, `stress` 0..1, `risk` 0..1, `unison` 0..1.
 - `about`: which group the stance is about. Same as `slice`, except the contrarian names the group it bets against (needed for votes). From `views.slice_view` / `contrarian_view`.
+- `risk`: `null` in the first `view` an analyst sends each day (views go out at once so peers can use them; risk follows 250 ms later in a second `view`). Always use the latest `view` per agent and date.
 - `rebound`: true on rebound days (plays the rebound solo). From `views.rebound(prices)`.
 - `escalation`: only on the day it fires and until a decision arrives. Built by `views.escalation(...)`; `vote` is `support`, `neutral` or `dissent`.
 - `reason`: from `explain.reason(view, date, cache)`.

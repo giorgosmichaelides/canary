@@ -1,10 +1,12 @@
 """Tests for the analyst's pure parts: trust, the takeover ring, who is alive, and risk."""
 
 import time
+from typing import Any, cast
 
 import pytest
 
 from canary.agent import (
+    Analyst,
     GONE_AFTER,
     RING,
     STARTUP_GRACE,
@@ -16,6 +18,7 @@ from canary.agent import (
     slices_to_cover,
     trust,
 )
+from canary.bus import Bus
 from canary.sim import REPLAYS, load_prices, run
 
 ALL = set(RING)
@@ -88,3 +91,27 @@ def test_live_risk_matches_sim_when_everyone_is_fresh(replay_name: str) -> None:
         now = time.time()
         book = {name: {**form_view(name, name, upto), "ts": now} for name in RING}
         assert day_risk(book, upto, now) == pytest.approx(day.risk)
+
+
+class FakeBus:
+    """Collects sent messages instead of using the network."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    def send(self, msg: dict[str, Any]) -> None:
+        self.sent.append(msg)
+
+
+def test_first_view_of_the_day_has_no_stale_risk() -> None:
+    """Views go out at once with risk null; the risk follows in a second view."""
+    bus = FakeBus()
+    analyst = Analyst("havens", cast(Bus, bus))
+    analyst.risk = 0.99  # pretend yesterday was scary
+    analyst.on_tick({"type": "tick", "replay": "2020", "i": 0, "date": "2020-02-03"})
+    first = bus.sent[-1]
+    assert first["date"] == "2020-02-03" and first["risk"] is None
+    analyst.finish_day()
+    second = bus.sent[-1]
+    assert second["date"] == "2020-02-03"
+    assert isinstance(second["risk"], float) and second["risk"] != 0.99

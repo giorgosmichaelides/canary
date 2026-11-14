@@ -279,7 +279,8 @@ class Analyst:
         self.decided: set[str] = set()
 
         self.today: Optional[dict[str, Any]] = None
-        self.risk = 0.0
+        # None until today's risk is computed (RISK_DELAY after the tick).
+        self.risk: Optional[float] = None
         self.risk_due: Optional[float] = None
         self.last_view: Optional[dict[str, Any]] = None
         self.next_heartbeat = 0.0
@@ -390,6 +391,7 @@ class Analyst:
         }
         for slice_name in [self.name, *self.covering]:
             self.add_view(slice_name)
+        self.risk = None  # yesterday's risk must not go out under today's date
         self.send_view()
         self.risk_due = time.monotonic() + RISK_DELAY
 
@@ -416,26 +418,27 @@ class Analyst:
             return
         replay: Replay = self.today["replay"]
         date: str = self.today["date"]
-        self.risk = day_risk(self.book, self.today["prices"], time.time())
-        self.state, fires = check_escalation(self.state, self.risk)
+        risk = day_risk(self.book, self.today["prices"], time.time())
+        self.risk = risk
+        self.state, fires = check_escalation(self.state, risk)
         if fires:
             views = [cast(View, self.book[s]) for s in RING if s in self.book]
             try:
-                card = escalation(replay.name, date, self.risk, views)
+                card = escalation(replay.name, date, risk, views)
             except ValueError:
                 card = None
             if card is not None and card["id"] not in self.decided:
                 self.open[card["id"]] = card
                 self.log(f"escalation {card['id']}: {card['action']}")
         print(
-            f"{self.name}: {date} risk {self.risk:.2f} unison {self.today['unison']:.2f}"
+            f"{self.name}: {date} risk {risk:.2f} unison {self.today['unison']:.2f}"
             + (f" covering {','.join(self.covering)}" if self.covering else ""),
             flush=True,
         )
         self.send_view()
 
     def send_view(self) -> None:
-        """Broadcast today's views with the latest risk and the oldest open card."""
+        """Broadcast today's views, today's risk (None until computed) and the oldest open card."""
         if self.today is None:
             return
         msg: dict[str, Any] = {
