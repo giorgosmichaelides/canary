@@ -32,8 +32,8 @@ const Music = (() => {
   /** Pitch classes of the shared D minor pentatonic scale (D F G A C), in semitones from D. */
   const SCALE = [0, 3, 5, 7, 10];
 
-  /** Tempo in beats per minute at risk 0 (CLAUDE.md says 116; 96 is being trialled). */
-  const BPM = 96;
+  /** Tempo in beats per minute at risk 0. Tempo rises with risk, like a Geiger counter. */
+  const BPM = 80;
 
   /** Maximum swing at unison 0 (CLAUDE.md section 8: 0.45 -> 0). */
   const MAX_SWING = 0.45;
@@ -105,7 +105,32 @@ const Music = (() => {
   let riskMuted = false;
 
   /** Tempo at risk 1 (bpm). */
-  const MIN_BPM = 70;
+  const MAX_BPM = 160;
+
+  /** Seconds each tempo change glides over (on top of the risk smoothing). */
+  const TEMPO_GLIDE = 0.5;
+
+  /**
+   * Geiger tick layer: random clicks (a Poisson process, like radiation counts)
+   * whose rate and level rise with risk. Runs on its own clock, not the beat.
+   * Rate slides exponentially from GEIGER_MIN_RATE to GEIGER_MAX_RATE ticks/s,
+   * level from GEIGER_MIN_DB to GEIGER_MAX_DB.
+   */
+  const GEIGER_MIN_RATE = 1;
+  const GEIGER_MAX_RATE = 14;
+  const GEIGER_MIN_DB = -34;
+  const GEIGER_MAX_DB = -8;
+  /** Shortest gap between two ticks (s), so bursts stay audible as separate clicks. */
+  const GEIGER_MIN_GAP = 0.012;
+  /** How far ahead (s) ticks are scheduled, and how often (ms) the scheduler runs. */
+  const GEIGER_LOOKAHEAD = 0.15;
+  const GEIGER_INTERVAL_MS = 40;
+
+  /** Geiger tick synth and its output gain (ducks with the card), built in build(). */
+  let geigerSynth = null;
+  let geigerGain = null;
+  /** Audio-clock time of the next scheduled tick. */
+  let geigerNext = 0;
 
   /** Unison at or above which the voices have "arrived": swing 0 and a big shared D on every downbeat. */
   const ARRIVAL = 0.95;
@@ -139,13 +164,49 @@ const Music = (() => {
   let built = false;
 
   /**
-   * Map risk to tempo, sliding linearly from BPM at 0 to MIN_BPM at 1.
+   * Map risk to tempo, rising linearly from BPM at 0 to MAX_BPM at 1.
    * @param {number} r Risk, 0..1.
    * @returns {number} Beats per minute.
    */
   function riskToBpm(r) {
-    return BPM + (MIN_BPM - BPM) * r;
+    return BPM + (MAX_BPM - BPM) * r;
   }
+
+  /**
+   * Geiger tick rate for a risk level (exponential, so each step of risk
+   * multiplies the rate: 1/s calm, ~3.7/s at 0.5, 14/s at 1 by default).
+   * @param {number} r Risk, 0..1.
+   * @returns {number} Ticks per second.
+   */
+  function geigerRate(r) {
+    return GEIGER_MIN_RATE * (GEIGER_MAX_RATE / GEIGER_MIN_RATE) ** r;
+  }
+
+  /**
+   * Schedule Geiger ticks for the next GEIGER_LOOKAHEAD seconds. Gaps are
+   * exponentially distributed (random, like radiation counts) at the current
+   * rate; level and rate follow smoothed risk. Silent while muted or stopped.
+   * @returns {void}
+   */
+  function geigerSchedule() {
+    if (!built || !geigerSynth) return;
+    const now = Tone.now();
+    if (riskMuted || Tone.Transport.state !== "started") {
+      geigerNext = now;
+      return;
+    }
+    // After a stall (hidden tab, paused audio) don't fire a backlog of ticks.
+    if (geigerNext < now) geigerNext = now + 0.01;
+    const rate = geigerRate(risk);
+    const db = GEIGER_MIN_DB + (GEIGER_MAX_DB - GEIGER_MIN_DB) * risk;
+    while (geigerNext < now + GEIGER_LOOKAHEAD) {
+      // Each click a little louder or softer than the last, like real counts.
+      const velocity = Tone.dbToGain(db + (Math.random() - 0.5) * 6);
+      geigerSynth.triggerAttackRelease(0.004, geigerNext, Math.min(1, velocity));
+      geigerNext += Math.max(GEIGER_MIN_GAP, -Math.log(1 - Math.random()) / rate);
+    }
+  }
+  setInterval(geigerSchedule, GEIGER_INTERVAL_MS);
 
   /** Calm mix: how much quieter (dB) and how muffled (low-pass Hz) the music is at low risk. */
   const CALM_DB = -7;
@@ -186,7 +247,7 @@ const Music = (() => {
 
     // Drone: silent when calm, loud in a crash.
     droneGain.gain.rampTo(riskMuted ? 0 : 0.6 * stress ** 2, 0.1);
-    Tone.Transport.bpm.rampTo(riskToBpm(risk), 0.1);
+    Tone.Transport.bpm.rampTo(riskToBpm(risk), TEMPO_GLIDE);
 
     // Ominous layers. Each is silent in calm markets and grows as risk climbs.
     // Tritone (G#2 against the D drone): enters around risk 0.3, swells to full.
@@ -943,6 +1004,16 @@ const Music = (() => {
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.02 },
     }).connect(musicBus);
     clickSynth.volume.value = -6;
+
+    // Geiger ticks: tiny white-noise bursts through a band-pass, straight to the
+    // output (not through the calm low-pass, which would swallow them) but ducked
+    // with the card via geigerGain.
+    geigerGain = new Tone.Gain(ducked ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1).toDestination();
+    geigerSynth = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.0005, decay: 0.004, sustain: 0, release: 0.003 },
+    }).connect(new Tone.Filter({ frequency: 3500, type: "bandpass", Q: 1.2 }).connect(geigerGain));
+    geigerNext = Tone.now();
     applyRisk();
 
     // Re-apply any mutes set from the page before the synths existed.
@@ -1029,7 +1100,7 @@ const Music = (() => {
 
   /**
    * Set the risk level. Safe to call at any time, before or after start().
-   * Drives drone gain, click level and tempo (116 bpm at 0 down to 70 at 1).
+   * Drives drone gain, click level, Geiger tick rate and tempo (80 bpm at 0 up to 160 at 1).
    * @param {number} value Risk, clamped to 0..1.
    * @returns {void}
    */
@@ -1187,7 +1258,10 @@ const Music = (() => {
    */
   function setDuck(on) {
     ducked = on;
-    if (built) musicBus.gain.rampTo(on ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1, on ? 0.5 : UNDUCK_SECONDS);
+    if (!built) return;
+    const level = on ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1;
+    musicBus.gain.rampTo(level, on ? 0.5 : UNDUCK_SECONDS);
+    geigerGain.gain.rampTo(level, on ? 0.5 : UNDUCK_SECONDS);
   }
 
   /**
