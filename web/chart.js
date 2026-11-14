@@ -249,8 +249,15 @@
     close.focus();
   }
 
+  // Presenter key: B blacks out the screen (or closes it), Escape closes it.
   window.addEventListener("keydown", (e) => {
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "Escape" && !blind.hidden) blind.hidden = true;
+    if (e.key.toLowerCase() === "b") {
+      if (blind.hidden) startBlind();
+      else blind.hidden = true;
+    }
   });
 
   /**

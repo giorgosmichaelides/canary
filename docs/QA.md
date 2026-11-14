@@ -8,6 +8,12 @@ Canary replays the March 2020 currency crash as music. Four analysts each watch 
 
 Pitch line: *"In March 2020 there was one trade: buy dollars. This is what that sounds like."*
 
+Who it's for: anyone who watches markets. You can hear Canary while you look at something else, so a trader can leave it running in the background and notice when everything starts moving together. People who can't see the screen can follow it too.
+
+If asked whether it's accessible: partly. The music and the blind test work without sight, but the card and the chart haven't been checked with a screen reader yet.
+
+Blind test: press B to black out the screen while the music plays. The judges guess calm or crash, then the screen shows the date and the unison. It counts as a crash when unison or risk is 0.5 or more.
+
 ## How it works (5 steps)
 
 1. **Data:** daily exchange rates for 7 currencies from the US Federal Reserve (H.10), all in US dollars, cached in `data/fx_daily.csv`. No internet at demo time.

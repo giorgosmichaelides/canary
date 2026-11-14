@@ -4,6 +4,8 @@
 
 Canary replays the March 2020 currency crash as live music. Four analyst processes each watch a slice of the FX market and play their own part. When the currencies start moving together, the parts merge, and at the peak every part plays one note. That is what "all correlations go to one" sounds like.
 
+It's meant for anyone who watches markets. Correlation doesn't show on a price chart, and nobody can watch a chart all day. Leave Canary running in the background and you'll hear when everything starts moving together, even if you can't see the screen.
+
 When risk crosses a threshold, code proposes an action, an AI writes one line per analyst explaining their view, and a named human approves or vetoes it.
 
 > Historical replay of a hypothetical portfolio, for demonstration only. The music does not predict anything; it makes correlation, which you can't see on a price chart, audible.
@@ -17,7 +19,7 @@ python -m canary.run            # starts everything and opens http://localhost:8
 python -m canary.run --interval 0.5   # faster, for a quick look
 ```
 
-Click **Start audio**. The replay plays one trading day every 2 seconds; when the card appears on 2 March, enter your name and approve or veto.
+Click **Start audio**. The replay plays one trading day every 2 seconds; when the card appears on 2 March, enter your name and approve or veto. Press B to black out the screen and guess calm or crash by ear, K to kill the fx analyst and R to revive it.
 
 Offline tools:
 
