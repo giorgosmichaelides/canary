@@ -89,6 +89,17 @@
       border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 3px 10px; }
     .cc .picker button[aria-pressed="true"] { color: ${C.ink}; border-color: ${C.ink2}; background: rgba(255,255,255,0.08); }
     .cc .picker button:disabled { opacity: .5; cursor: default; }
+    .cc .picker .blind { border-color: ${C.unison}; color: ${C.ink}; }
+    .blindfold { position: fixed; inset: 0; z-index: 50; background: #050608; color: ${C.ink};
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      font: 16px system-ui, -apple-system, "Segoe UI", sans-serif; text-align: center; padding: 16px; }
+    .blindfold[hidden] { display: none; }
+    .blindfold h2 { font-size: clamp(28px, 6vw, 56px); margin: 0; font-weight: 600; }
+    .blindfold p { margin: 0; color: ${C.ink2}; max-width: 34em; }
+    .blindfold .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .blindfold button { font: inherit; font-size: 20px; padding: 12px 28px; border-radius: 10px; cursor: pointer;
+      color: ${C.ink}; background: #14171f; border: 1px solid rgba(255,255,255,0.25); }
+    .blindfold .answer { font-size: clamp(22px, 4vw, 36px); color: ${C.ink}; }
     .cc .heat { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .cc .heat h3 { margin: 0 0 2px; font-size: 14px; color: ${C.ink}; }
     .cc .heat .grid { display: grid; grid-template-columns: 36px repeat(7, minmax(22px, 40px)); gap: 2px; margin-top: 8px; }
@@ -176,7 +187,71 @@
     picker.append(button);
   }
   picker.hidden = !location.protocol.startsWith("http");
-  root.append(title, sub, picker, wrap, details, heat, report);
+
+  // Blind test: hide the screen, keep the music, let the judges guess by ear.
+  const blindButton = el("button", "Blind test: calm or crash?");
+  blindButton.type = "button";
+  blindButton.className = "blind";
+  blindButton.addEventListener("click", () => startBlind());
+  const blindRow = el("div");
+  blindRow.className = "picker";
+  blindRow.append(blindButton);
+  const blind = el("div");
+  blind.className = "blindfold";
+  blind.hidden = true;
+  blind.setAttribute("role", "dialog");
+  blind.setAttribute("aria-modal", "true");
+  blind.setAttribute("aria-label", "Blind test");
+  document.body.append(blind);
+  root.append(title, sub, picker, blindRow, wrap, details, heat, report);
+
+  /** Black out the screen and ask the room to guess. @returns {void} */
+  function startBlind() {
+    const heading = el("h2", "Listen.");
+    const ask = el("p", "No charts, no dates. Is the market calm, or in a crash?");
+    const row = el("div");
+    row.className = "row";
+    for (const guess of ["Calm", "Crash"]) {
+      const b = el("button", guess);
+      b.type = "button";
+      b.addEventListener("click", () => revealBlind(guess));
+      row.append(b);
+    }
+    blind.replaceChildren(heading, ask, row);
+    blind.hidden = false;
+    row.firstChild.focus();
+  }
+
+  /**
+   * Show what was really playing when the room guessed.
+   * "Crash" means the band was merging (unison 0.5+) or risk was 0.5+.
+   * @param {string} guess "Calm" or "Crash".
+   * @returns {void}
+   */
+  function revealBlind(guess) {
+    const days = state.days.filter(Boolean);
+    const day = days[days.length - 1];
+    const close = el("button", "Back to the desk");
+    close.type = "button";
+    close.addEventListener("click", () => { blind.hidden = true; blindButton.focus(); });
+    if (!day || day.unison === null) {
+      blind.replaceChildren(el("h2", "Nothing playing yet"), el("p", "Start the replay, then try again."), close);
+      return;
+    }
+    const crash = day.unison >= 0.5 || (day.risk !== null && day.risk >= 0.5);
+    const truth = crash ? "Crash" : "Calm";
+    const verdict = el("h2", guess === truth ? "Right." : "Not quite.");
+    const answer = el("p", `It was ${crash ? "a crash" : "calm"}: ${shortDate(day.date)} ${day.date.slice(0, 4)}.`);
+    answer.className = "answer";
+    const risk = day.risk === null ? "" : `, risk ${day.risk.toFixed(2)}`;
+    const detail = el("p", `Unison ${day.unison.toFixed(2)}${risk}. ${crash ? "The parts were merging toward one note: everything moving together against the dollar." : "Four separate parts: the currencies were going their own ways."}`);
+    blind.replaceChildren(verdict, answer, detail, close);
+    close.focus();
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !blind.hidden) blind.hidden = true;
+  });
 
   /**
    * Ask the relay to restart the tape on another crisis.
