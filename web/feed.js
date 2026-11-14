@@ -27,7 +27,15 @@ const Feed = (() => {
   let mode = "connecting";
 
   /** Mock replay state. */
-  const mock = { index: 0, timer: null, paused: false, decided: new Set(), started: false, wanted: false };
+  const mock = {
+    index: 0, timer: null, hbTimer: null, paused: false, decided: new Set(), started: false, wanted: false,
+    down: new Map(), // analyst -> Date.now() when killed
+    degraded: new Set(),
+  };
+
+  /** Takeover ring and timing (DESIGN.md section 5), emulated by the mock. */
+  const RING = ["fx", "havens", "commodity", "contrarian"];
+  const GONE_MS = 3000;
 
   /**
    * Report a mode change to the page.
@@ -112,6 +120,74 @@ const Feed = (() => {
     mock.started = true;
     mockStep();
     mock.timer = setInterval(mockStep, TICK_MS);
+    mock.hbTimer = setInterval(mockHeartbeats, 500);
+  }
+
+  /**
+   * The next live analyst after `slice` in the ring, or null if none.
+   * @param {string} slice Slice whose owner is down.
+   * @returns {string|null} The coverer.
+   */
+  function mockCoverer(slice) {
+    const i = RING.indexOf(slice);
+    for (let k = 1; k < RING.length; k += 1) {
+      const c = RING[(i + k) % RING.length];
+      if (!mock.down.has(c)) return c;
+    }
+    return null;
+  }
+
+  /**
+   * True once a killed analyst has been silent long enough to be covered.
+   * @param {string} name Analyst name.
+   * @returns {boolean} True if gone.
+   */
+  function mockGone(name) {
+    return mock.down.has(name) && Date.now() - mock.down.get(name) >= GONE_MS;
+  }
+
+  /**
+   * Slices an analyst is covering right now.
+   * @param {string} name Analyst name.
+   * @returns {string[]} Covered slices.
+   */
+  function mockCovering(name) {
+    return RING.filter((s) => mockGone(s) && mockCoverer(s) === name);
+  }
+
+  /**
+   * Heartbeats from every analyst the mock has not killed (75% dropped when degraded).
+   * @returns {void}
+   */
+  function mockHeartbeats() {
+    const ts = Date.now() / 1000;
+    for (const name of RING) {
+      if (mock.down.has(name)) continue;
+      if (mock.degraded.has(name) && Math.random() < 0.75) continue;
+      handler({ type: "hb", agent: name, ts, covering: mockCovering(name) });
+    }
+  }
+
+  /**
+   * Rewrite a recorded day's views for killed or degraded analysts. A killed
+   * analyst's slice disappears for GONE_MS, then is published by the next live
+   * analyst in the ring. (Simplification: the coverer keeps the recorded
+   * numbers; the real coverer would use its own temperament.)
+   * @param {Object[]} views Recorded views.
+   * @param {number} ts Timestamp to stamp.
+   * @returns {Object[]} Views as the bus would carry them.
+   */
+  function mockViews(views, ts) {
+    const out = [];
+    for (const v of views) {
+      if (mock.down.has(v.slice)) {
+        const c = mockGone(v.slice) ? mockCoverer(v.slice) : null;
+        if (c) out.push({ ...v, by: c, ts, reason: `Covering ${v.slice}. ${v.reason}` });
+      } else if (!(mock.degraded.has(v.slice) && Math.random() < 0.75)) {
+        out.push({ ...v, ts });
+      }
+    }
+    return out;
   }
 
   /**
@@ -129,7 +205,8 @@ const Feed = (() => {
     }
     const day = days[mock.index];
     const ts = Date.now() / 1000;
-    const msg = { ...day, ts, views: day.views.map((v) => ({ ...v, ts })) };
+    const msg = { ...day, ts, views: mockViews(day.views, ts) };
+    msg.covering = RING.filter((s) => mockGone(s));
     if (msg.escalation && mock.decided.has(msg.escalation.id)) delete msg.escalation;
     handler(msg);
     if (!(msg.escalation || mock.paused)) mock.index += 1;
@@ -173,7 +250,7 @@ const Feed = (() => {
 
   /**
    * Send a control command (play, pause, restart, kill, degrade, heal, revive).
-   * Mock supports play and pause only.
+   * The mock emulates all of them (kill/revive/degrade/heal per DESIGN.md timing).
    * @param {string} cmd Command name.
    * @param {string} [target] Analyst name, for kill/degrade/heal/revive.
    * @returns {Promise<boolean>} True if delivered.
@@ -182,6 +259,17 @@ const Feed = (() => {
     if (mode === "mock") {
       if (cmd === "pause") mock.paused = true;
       if (cmd === "play") mock.paused = false;
+      if (cmd === "restart") mock.index = 0;
+      if (cmd === "kill" && target && !mock.down.has(target)) {
+        mock.down.set(target, Date.now());
+        mock.degraded.delete(target);
+      }
+      if (cmd === "revive") mock.down.delete(target);
+      if (cmd === "degrade" && target) mock.degraded.add(target);
+      if (cmd === "heal") mock.degraded.delete(target);
+      if (!["pause", "play"].includes(cmd)) {
+        handler({ type: "log", agent: "mock", text: `${cmd}${target ? " " + target : ""} (simulated in the mock)` });
+      }
       return true;
     }
     return post("/control", { cmd, target });
