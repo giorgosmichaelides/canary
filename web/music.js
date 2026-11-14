@@ -83,6 +83,15 @@ const Music = (() => {
   /** Raw rebound flag from the latest view. */
   let rebound = false;
 
+  /** True for the first bar of a rebound, so the climb fades in. */
+  let reboundFresh = false;
+
+  /** performance.now() until which the music holds still (after a decision). */
+  let holdUntil = 0;
+
+  /** Seconds for the music to come back up after the card closes (going down is 0.5 s). */
+  const UNDUCK_SECONDS = 3;
+
   /** Music bus (everything except event sounds; this is what ducks) and the trust reverb. */
   let musicBus = null;
   let trustReverb = null;
@@ -235,14 +244,18 @@ const Music = (() => {
       for (const name of Object.keys(targetViews)) smoothViews[name] = { ...targetViews[name] };
       return;
     }
-    smoothUnison = ease(smoothUnison, target.unison, dt);
-    risk = ease(risk, target.risk, dt);
-    for (const [name, goal] of Object.entries(targetViews)) {
-      const cur = smoothViews[name] || goal;
-      smoothViews[name] = {
-        stance: ease(cur.stance, goal.stance, dt),
-        conviction: ease(cur.conviction, goal.conviction, dt),
-      };
+    // While held (just after a decision) the music stays where it was, so the
+    // decision chord rings out before the market moves the sound again.
+    if (now >= holdUntil) {
+      smoothUnison = ease(smoothUnison, target.unison, dt);
+      risk = ease(risk, target.risk, dt);
+      for (const [name, goal] of Object.entries(targetViews)) {
+        const cur = smoothViews[name] || goal;
+        smoothViews[name] = {
+          stance: ease(cur.stance, goal.stance, dt),
+          conviction: ease(cur.conviction, goal.conviction, dt),
+        };
+      }
     }
     for (const sl of SLICES) trust[sl] = ease(trust[sl] ?? 1, freshness(sl), dt);
     frameCount += 1;
@@ -922,7 +935,9 @@ const Music = (() => {
           barBy[sl] = sliceBy[sl] || sl;
           barStance[sl] = smoothViews[sl] ? smoothViews[sl].stance : 0;
         }
-        barRebound = rebound;
+        const next = performance.now() < holdUntil ? barRebound : rebound;
+        reboundFresh = next && !barRebound;
+        barRebound = next;
       }
       const u = unison;
       const arrived = u >= ARRIVAL;
@@ -935,7 +950,8 @@ const Music = (() => {
       if (barRebound) {
         // Rebound: a 16th-note pentatonic climb over two octaves (D4 to D6), ignoring unison.
         const midi = degreeToMidi(62, Math.round((step * 10) / 15));
-        reboundSynth.triggerAttackRelease(Tone.Frequency(midi, "midi").toFrequency(), "16n", time, 0.5 + 0.4 * (step / 15));
+        const fade = reboundFresh ? (step + 1) / 16 : 1; // first bar fades in
+        reboundSynth.triggerAttackRelease(Tone.Frequency(midi, "midi").toFrequency(), "16n", time, fade * (0.5 + 0.4 * (step / 15)));
       }
       const set = styles[styleName];
       for (const sl of SLICES) {
@@ -972,6 +988,7 @@ const Music = (() => {
    * @returns {void}
    */
   function setUnison(value) {
+    if (!Number.isFinite(value)) return;
     target.unison = Math.min(1, Math.max(0, value));
   }
 
@@ -982,6 +999,7 @@ const Music = (() => {
    * @returns {void}
    */
   function setRisk(value) {
+    if (!Number.isFinite(value)) return;
     target.risk = Math.min(1, Math.max(0, value));
   }
 
@@ -1134,11 +1152,21 @@ const Music = (() => {
    */
   function setDuck(on) {
     ducked = on;
-    if (built) musicBus.gain.rampTo(on ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1, 0.5);
+    if (built) musicBus.gain.rampTo(on ? Tone.dbToGain(DUCK_DB - MASTER_DB) : 1, on ? 0.5 : UNDUCK_SECONDS);
+  }
+
+  /**
+   * Hold the music still for a moment (smoothed values, contour and rebound
+   * freeze; takeover and trust still apply). Used after a decision.
+   * @param {number} seconds How long to hold.
+   * @returns {void}
+   */
+  function hold(seconds) {
+    holdUntil = Math.max(holdUntil, performance.now() + seconds * 1000);
   }
 
   return {
     start, setUnison, setRisk, setViews, setRebound, getSmoothed, getTrust, getTempo,
-    sting, decision, setMute, setRiskMute, setStyle, setDuck,
+    sting, decision, hold, setMute, setRiskMute, setStyle, setDuck,
   };
 })();
