@@ -16,6 +16,8 @@
   const REPLAY_DAYS = { "2020": 48, "2024": 44, "2008": 126, "2022": 84 };
   /** The risk basket: commodity currencies, the first to fall in a panic. */
   const RISK_BASKET = ["AUD", "CAD", "NOK"];
+  /** The three holdings of the hypothetical portfolio (equal thirds), as in canary.views.SLICES. */
+  const HOLDINGS = { fx: ["EUR", "GBP"], havens: ["JPY", "CHF"], commodity: ["AUD", "CAD", "NOK"] };
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   /** Colours by role (dark page). Series pair validated on #0b0d12 with the dataviz validator. */
@@ -28,12 +30,16 @@
     axis: "#383835",
     price: "#3987e5",
     unison: "#d95926",
+    cut: "#199e70",
     rebound: "rgba(137, 135, 129, 0.16)",
   };
 
   /** The price axis always shows at least this range (index, first day = 100). */
   const PRICE_MIN = 85;
   const PRICE_MAX = 105;
+  /** The portfolio axis always shows at least this range (value, first day = 100). */
+  const PORT_MIN = 90;
+  const PORT_MAX = 105;
   const PAD = { left: 48, right: 72, top: 30, gap: 46, bottom: 28 };
   const PANEL_H = 150;
 
@@ -138,8 +144,13 @@
     if (!state.base) state.base = { date: msg.date, prices };
     const values = RISK_BASKET.map((c) => (100 * prices[c]) / state.base.prices[c]);
     const index = values.reduce((a, b) => a + b, 0) / values.length;
+    const holdings = {};
+    for (const [name, currencies] of Object.entries(HOLDINGS)) {
+      holdings[name] = currencies.reduce((sum, c) => sum + (100 * prices[c]) / state.base.prices[c], 0) / currencies.length;
+    }
+    const hold = (holdings.fx + holdings.havens + holdings.commodity) / 3;
     const day = state.days[i] || { unison: null, risk: null, rebound: false };
-    Object.assign(day, { i, date: msg.date, index });
+    Object.assign(day, { i, date: msg.date, index, holdings, hold });
     state.days[i] = day;
     state.byDate[msg.date] = day;
   }
@@ -164,7 +175,9 @@
    */
   function onCard(card) {
     if (!state.card || state.card.id !== card.id) {
-      state.card = { id: card.id, date: card.date, action: card.action, verdict: null, by: null };
+      state.card = {
+        id: card.id, date: card.date, action: card.action, slice: card.slice, cut: card.cut, verdict: null, by: null,
+      };
     }
   }
 
@@ -178,6 +191,23 @@
       state.card.verdict = msg.verdict;
       state.card.by = msg.by || null;
     }
+  }
+
+  /**
+   * Portfolio value on a day if the card's action was taken on its date.
+   *
+   * Equal thirds in fx, havens and commodity. Cutting a holding by c on day D
+   * moves c of it into cash (dollars) at D's price, so afterwards the portfolio
+   * is the "no action" value minus (c / 3) x (holding(t) - holding(D)).
+   *
+   * @param {object} d Day.
+   * @returns {number|null} Value, or null before the card's date (or with no card).
+   */
+  function cutValue(d) {
+    const card = state.card;
+    const start = card && state.byDate[card.date];
+    if (!start || !card.slice || !(card.slice in HOLDINGS) || d.i < start.i) return null;
+    return d.hold - (card.cut / 3) * (d.holdings[card.slice] - start.holdings[card.slice]);
   }
 
   // ---------------------------------------------------------------- drawing
@@ -211,7 +241,9 @@
    */
   function layout() {
     const width = Math.max(320, wrap.clientWidth);
-    const height = PAD.top + PANEL_H + PAD.gap + PANEL_H + PAD.bottom;
+    const hasPort = Boolean(state.card && state.byDate[state.card.date] && state.card.slice);
+    const panels = hasPort ? 3 : 2;
+    const height = PAD.top + panels * PANEL_H + (panels - 1) * PAD.gap + PAD.bottom;
     const n = Math.max(REPLAY_DAYS[state.replay] || 48, state.days.length);
     const plotW = width - PAD.left - PAD.right;
     const x = (i) => PAD.left + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
@@ -228,7 +260,17 @@
     if (hi === lo) hi = lo + step;
     const yPrice = (v) => top.y1 - ((v - lo) / (hi - lo)) * PANEL_H;
     const yUni = (v) => bot.y1 - v * PANEL_H;
-    return { width, height, n, plotW, x, top, bot, lo, hi, step, yPrice, yUni };
+    // Portfolio panel (only once a card exists): no action vs the card's action.
+    const port = hasPort ? { y0: bot.y1 + PAD.gap, y1: bot.y1 + PAD.gap + PANEL_H } : null;
+    const values = state.days.filter(Boolean).flatMap((d) => [d.hold, cutValue(d)]).filter((v) => v !== null);
+    let pLo = Math.min(PORT_MIN, ...values);
+    let pHi = Math.max(PORT_MAX, ...values);
+    const pStep = niceStep((pHi - pLo) / 3 || 1);
+    pLo = Math.floor(pLo / pStep) * pStep;
+    pHi = Math.ceil(pHi / pStep) * pStep;
+    const yPort = (v) => (port ? port.y1 - ((v - pLo) / (pHi - pLo)) * PANEL_H : 0);
+    const end = port ? port.y1 : bot.y1;
+    return { width, height, n, plotW, x, top, bot, port, end, lo, hi, step, yPrice, yUni, pLo, pHi, pStep, yPort };
   }
 
   /**
@@ -262,7 +304,7 @@
     g.fillStyle = C.rebound;
     const half = L.n > 1 ? L.plotW / (L.n - 1) / 2 : 4;
     for (const d of days) {
-      if (d.rebound) g.fillRect(L.x(d.i) - half, L.top.y0, half * 2, L.bot.y1 - L.top.y0);
+      if (d.rebound) g.fillRect(L.x(d.i) - half, L.top.y0, half * 2, L.end - L.top.y0);
     }
 
     // Panel titles.
@@ -276,6 +318,13 @@
     g.textAlign = "right";
     for (let v = L.lo; v <= L.hi + 1e-9; v += L.step) hline(g, L, L.yPrice(v), v.toFixed(L.step < 1 ? 1 : 0));
     for (const v of [0, 0.5, 1]) hline(g, L, L.yUni(v), v.toFixed(1));
+    if (L.port) {
+      for (let v = L.pLo; v <= L.pHi + 1e-9; v += L.pStep) hline(g, L, L.yPort(v), v.toFixed(0));
+      g.fillStyle = C.ink2;
+      g.textAlign = "left";
+      g.fillText(`Portfolio (equal thirds): no action vs ${state.card.action.toLowerCase()} on ${shortDate(state.card.date)}`, PAD.left, L.port.y0 - 14);
+      legend(g, L.width - PAD.right, L.port.y0 + 10, [[C.cut, cutLabel()], [C.muted, "no action"]]);
+    }
 
     // Month labels under the bottom panel, at the first trading day of each month.
     g.fillStyle = C.muted;
@@ -285,7 +334,7 @@
       const month = d.date.slice(0, 7);
       if (month !== lastMonth) {
         const label = lastMonth === null ? shortDate(d.date) : MONTHS[Number(d.date.slice(5, 7)) - 1];
-        g.fillText(label, L.x(d.i), L.bot.y1 + 14);
+        g.fillText(label, L.x(d.i), L.end + 14);
         lastMonth = month;
       }
     }
@@ -296,7 +345,7 @@
       g.strokeStyle = C.ink2;
       g.beginPath();
       g.moveTo(cx, L.top.y0 - 4);
-      g.lineTo(cx, L.bot.y1);
+      g.lineTo(cx, L.end);
       g.stroke();
       const verdict = state.card.verdict ? ` · ${state.card.verdict === "approve" ? "approved" : "vetoed"}` : " · awaiting decision";
       const name = `Card ${shortDate(state.card.date)}`;
@@ -319,12 +368,23 @@
     // The two series.
     line(g, days, (d) => d.index, L.yPrice, L, C.price);
     line(g, days.filter((d) => d.unison !== null), (d) => d.unison, L.yUni, L, C.unison);
+    if (L.port) {
+      line(g, days, (d) => d.hold, L.yPort, L, C.muted);
+      line(g, days.filter((d) => cutValue(d) !== null), cutValue, L.yPort, L, C.cut);
+    }
 
     // End labels at today's values.
     const today = days[days.length - 1];
     if (today) {
       endLabel(g, L.x(today.i), L.yPrice(today.index), today.index.toFixed(1), C.price);
       if (today.unison !== null) endLabel(g, L.x(today.i), L.yUni(today.unison), today.unison.toFixed(2), C.unison);
+      const cut = cutValue(today);
+      if (L.port && cut !== null) {
+        // Direct labels name the two lines (2 series); the higher one sits above.
+        const cutAbove = cut >= today.hold;
+        endLabel(g, L.x(today.i), L.yPort(cut), cut.toFixed(1), C.cut, cutAbove ? -7 : 7);
+        endLabel(g, L.x(today.i), L.yPort(today.hold), today.hold.toFixed(1), C.muted, cutAbove ? 7 : -7);
+      }
     }
 
     // Hover crosshair.
@@ -333,7 +393,7 @@
       g.strokeStyle = C.muted;
       g.beginPath();
       g.moveTo(hx, L.top.y0);
-      g.lineTo(hx, L.bot.y1);
+      g.lineTo(hx, L.end);
       g.stroke();
     }
   }
@@ -385,9 +445,10 @@
    * @param {number} y Pixel y.
    * @param {string} text Value label.
    * @param {string} color Series colour.
+   * @param {number} [nudge] Pixels to move the text up or down so two labels don't collide.
    * @returns {void}
    */
-  function endLabel(g, x, y, text, color) {
+  function endLabel(g, x, y, text, color, nudge = 0) {
     g.fillStyle = C.surface;
     g.beginPath();
     g.arc(x, y, 6, 0, Math.PI * 2);
@@ -398,7 +459,43 @@
     g.fill();
     g.fillStyle = C.ink;
     g.textAlign = "left";
-    g.fillText(text, x + 10, y);
+    g.fillText(text, x + 10, y + nudge);
+  }
+
+  /**
+   * A right-aligned legend row of line keys and names, in text ink.
+   * @param {CanvasRenderingContext2D} g Context.
+   * @param {number} right Right edge in pixels.
+   * @param {number} y Pixel y of the row.
+   * @param {Array<[string, string]>} items [colour, name] pairs, left to right.
+   * @returns {void}
+   */
+  function legend(g, right, y, items) {
+    g.textAlign = "left";
+    let x = right;
+    const widths = items.map(([, name]) => g.measureText(name).width + 26);
+    x -= widths.reduce((a, b) => a + b, 0);
+    items.forEach(([color, name], k) => {
+      g.strokeStyle = color;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + 12, y);
+      g.stroke();
+      g.lineWidth = 1;
+      g.fillStyle = C.ink2;
+      g.fillText(name, x + 16, y);
+      x += widths[k];
+    });
+  }
+
+  /**
+   * Name of the "with the card's action" line, depending on the decision.
+   * @returns {string} "cut (approved)", "cut (vetoed)" or "if cut".
+   */
+  function cutLabel() {
+    const verdict = state.card && state.card.verdict;
+    return verdict === "approve" ? "cut (approved)" : verdict === "veto" ? "cut (vetoed)" : "if cut";
   }
 
   /** Subtitle and data table. @returns {void} */
@@ -407,11 +504,13 @@
     if (days.length === 0) return;
     const last = days[days.length - 1];
     const fake = state.synthetic ? "SYNTHETIC DATA · " : "";
-    sub.textContent = `${fake}Replay ${state.replay}: price index = 100 on ${shortDate(state.base.date)}; now ${shortDate(last.date)}. Shaded: rebound days.`;
+    const cut = cutValue(last);
+    const impact = cut === null ? "" : ` Cut vs no action today: ${cut - last.hold >= 0 ? "+" : ""}${(cut - last.hold).toFixed(1)} points.`;
+    sub.textContent = `${fake}Replay ${state.replay}: values = 100 on ${shortDate(state.base.date)}; now ${shortDate(last.date)}. Shaded: rebound days.${impact}`;
     if (!details.open) return;
     table.replaceChildren();
     const head = el("tr");
-    for (const h of ["Date", "Price index", "Unison", "Risk", "Event"]) head.append(el("th", h));
+    for (const h of ["Date", "Price index", "Unison", "Risk", "No action", "With cut", "Event"]) head.append(el("th", h));
     table.append(head);
     for (const d of days) {
       const row = el("tr");
@@ -420,6 +519,8 @@
         el("td", d.index.toFixed(1)),
         el("td", d.unison === null ? "–" : d.unison.toFixed(2)),
         el("td", d.risk === null ? "–" : d.risk.toFixed(2)),
+        el("td", d.hold.toFixed(1)),
+        el("td", cutValue(d) === null ? "–" : cutValue(d).toFixed(1)),
         el("td", eventText(d)),
       );
       table.append(row);
@@ -460,6 +561,11 @@
     tip.append(row(d.index.toFixed(1), "price index", C.price));
     if (d.unison !== null) tip.append(row(d.unison.toFixed(2), "unison", C.unison));
     if (d.risk !== null) tip.append(row(d.risk.toFixed(2), "risk", null));
+    if (state.card && state.card.slice) {
+      const cut = cutValue(d);
+      if (cut !== null) tip.append(row(cut.toFixed(1), cutLabel(), C.cut));
+      tip.append(row(d.hold.toFixed(1), "no action", C.muted));
+    }
     const ev = eventText(d);
     if (ev) tip.append(el("div", ev));
     tip.style.display = "block";

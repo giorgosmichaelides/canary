@@ -44,6 +44,8 @@ Pitch line: *"In March 2020 there was one trade: buy dollars. This is what that 
 
 False alarms in 2020: **8 Jan and 31 Jan**. Say so.
 
+**What approving the card does (2020, shown in the chart's third panel):** on an equal-thirds portfolio (fx, havens, commodity), cutting commodity by 30% on 2 Mar leaves you at **93.8 instead of 92.5** at the 20 Mar low (−6.2% instead of −7.5%) and **97.5 vs 97.0** on 9 Apr. A real but modest cushion; say "modest".
+
 **The honest summary:** the merging generalises across every crisis we tried; the early warning only worked in 2020, the year we tuned on. That's why we don't claim prediction.
 
 ## Likely questions
