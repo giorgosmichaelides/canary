@@ -282,6 +282,20 @@ class Vote(TypedDict):
     vote: VoteKind
 
 
+class RiskInputs(TypedDict):
+    """The three numbers the risk score is built from, shown on the card.
+
+    Attributes:
+        divergence: Money running to safety, 0..1 (see signals.divergence).
+        unison: How merged the band is, 0..1 (see signals.unison).
+        drawdown: Risk basket's fall from its peak, e.g. -0.052.
+    """
+
+    divergence: float
+    unison: float
+    drawdown: float
+
+
 class Escalation(TypedDict):
     """The approval card: what the code decided and how each analyst voted.
 
@@ -294,6 +308,7 @@ class Escalation(TypedDict):
         slice: The slice to cut.
         cut: How much to cut it by, e.g. 0.3.
         votes: One vote per view.
+        why: The inputs that produced `risk`, so the card can show the working.
     """
 
     id: str
@@ -304,6 +319,7 @@ class Escalation(TypedDict):
     slice: str
     cut: float
     votes: list[Vote]
+    why: RiskInputs
 
 
 @dataclass(frozen=True)
@@ -385,7 +401,9 @@ def proposed_cut(views: list[View], risk: float) -> tuple[str, float]:
     return weakest["slice"], BIG_CUT if risk >= BIG_CUT_AT else CUT
 
 
-def escalation(replay: str, date: str, risk: float, views: list[View]) -> Escalation:
+def escalation(
+    replay: str, date: str, risk: float, views: list[View], why: RiskInputs
+) -> Escalation:
     """Build the approval card for a day the escalation rule fired.
 
     Args:
@@ -393,6 +411,7 @@ def escalation(replay: str, date: str, risk: float, views: list[View]) -> Escala
         date: Market date, "YYYY-MM-DD".
         risk: Today's risk score.
         views: Every view in the analyst's book.
+        why: The divergence, unison and drawdown that produced `risk`.
 
     Returns:
         The escalation to include in the view message.
@@ -405,7 +424,7 @@ def escalation(replay: str, date: str, risk: float, views: list[View]) -> Escala
         "id": f"{replay}:{date}",
         "date": date,
         "risk": risk,
-        "rule": f"Risk {risk:.2f} >= {RAISE_AT:.2f} for {RAISE_DAYS} days in a row",
+        "rule": f"Risk {risk:.2f} ≥ {RAISE_AT:.2f} for {RAISE_DAYS} days in a row",
         "action": f"Cut {slice_name} by {cut:.0%}",
         "slice": slice_name,
         "cut": cut,
@@ -413,4 +432,5 @@ def escalation(replay: str, date: str, risk: float, views: list[View]) -> Escala
             {"slice": view["slice"], "by": view["by"], "vote": vote(view)}
             for view in views
         ],
+        "why": why,
     }

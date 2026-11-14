@@ -37,6 +37,7 @@ from canary.views import (
     ZSCORE_WINDOW,
     Escalation,
     EscalationState,
+    RiskInputs,
     View,
     check_escalation,
     contrarian_view,
@@ -162,7 +163,12 @@ def judge_day(
     risk = risk_score(div_score, unison_score, basket_drawdown)
 
     state, fires = check_escalation(state, risk)
-    card = escalation(replay.name, date, risk, views) if fires else None
+    why: RiskInputs = {
+        "divergence": div_score,
+        "unison": unison_score,
+        "drawdown": basket_drawdown,
+    }
+    card = escalation(replay.name, date, risk, views, why) if fires else None
     day = Day(
         date=date,
         views=views,

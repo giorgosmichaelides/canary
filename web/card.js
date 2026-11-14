@@ -102,6 +102,24 @@ const Card = (() => {
   }
 
   /**
+   * How the code worked out the risk score, in one line (the card's "Decided by code" proof).
+   * @param {Object} escalation Escalation; `why` holds divergence, unison and drawdown.
+   * @returns {string} e.g. "Risk 0.64 = 0.8 × max(divergence 0.67, unison 0.31) + 0.2 × (basket down 5.2% ÷ 10%)".
+   */
+  function workingText(escalation) {
+    const why = escalation.why;
+    const risk = escalation.risk.toFixed(2);
+    if (!why) return `Risk ${risk}`;
+    const fall = -why.drawdown;
+    const raw = 0.8 * Math.max(why.divergence, why.unison) + 0.2 * (fall / 0.1);
+    const capped = raw > 1 ? ", capped at 1" : "";
+    return (
+      `Risk ${risk} = 0.8 × max(divergence ${why.divergence.toFixed(2)}, unison ${why.unison.toFixed(2)})` +
+      ` + 0.2 × (basket down ${(fall * 100).toFixed(1)}% ÷ 10%)${capped}`
+    );
+  }
+
+  /**
    * Show the card for an escalation, once per id.
    * @param {Object} escalation Escalation from a `view` message.
    * @param {Object[]} views The views in the same message (for the AI one-liners).
@@ -117,8 +135,7 @@ const Card = (() => {
     openedAt = performance.now();
     el("card-action").textContent = escalation.action;
     el("card-rule").textContent = `${escalation.rule} (market date ${escalation.date})`;
-    el("card-numbers").textContent =
-      `Risk ${escalation.risk.toFixed(2)}, cut ${escalation.slice} by ${Math.round(escalation.cut * 100)}%`;
+    el("card-numbers").textContent = workingText(escalation);
     renderVotes(escalation.votes, views);
     el("card-reason").value = "";
     el("card-error").textContent = "";

@@ -46,6 +46,7 @@ from canary.tape import load_tape
 from canary.views import (
     Escalation,
     EscalationState,
+    RiskInputs,
     View,
     check_escalation,
     contrarian_view,
@@ -201,6 +202,21 @@ def correlation_unison(prices: Prices) -> float:
 def day_risk(book: dict[str, Entry], prices: Prices, now: float) -> float:
     """Today's risk score from this analyst's own book.
 
+    Args:
+        book: Slice -> newest view entry (with "ts").
+        prices: Output of history().
+        now: Current wall-clock time, to age the views.
+
+    Returns:
+        Risk, 0..1.
+    """
+    why = risk_inputs(book, prices, now)
+    return risk_score(why["divergence"], why["unison"], why["drawdown"])
+
+
+def risk_inputs(book: dict[str, Entry], prices: Prices, now: float) -> RiskInputs:
+    """The divergence, unison and drawdown today's risk is built from.
+
     Havens and commodity stances are weighted by how fresh their newest views
     are, so a silent slice counts for less.
 
@@ -210,7 +226,7 @@ def day_risk(book: dict[str, Entry], prices: Prices, now: float) -> float:
         now: Current wall-clock time, to age the views.
 
     Returns:
-        Risk, 0..1.
+        The three risk inputs (shown on the card).
     """
 
     def stance_and_trust(slice_name: str) -> tuple[float, float]:
@@ -221,9 +237,13 @@ def day_risk(book: dict[str, Entry], prices: Prices, now: float) -> float:
 
     havens_stance, havens_trust = stance_and_trust("havens")
     commodity_stance, commodity_trust = stance_and_trust("commodity")
-    div = divergence(havens_stance, havens_trust, commodity_stance, commodity_trust)
-    fall = drawdown(basket({c: prices[c] for c in RISK_BASKET}))
-    return risk_score(div, correlation_unison(prices), fall)
+    return {
+        "divergence": divergence(
+            havens_stance, havens_trust, commodity_stance, commodity_trust
+        ),
+        "unison": correlation_unison(prices),
+        "drawdown": drawdown(basket({c: prices[c] for c in RISK_BASKET})),
+    }
 
 
 def warm_states(
@@ -418,13 +438,14 @@ class Analyst:
             return
         replay: Replay = self.today["replay"]
         date: str = self.today["date"]
-        risk = day_risk(self.book, self.today["prices"], time.time())
+        why = risk_inputs(self.book, self.today["prices"], time.time())
+        risk = risk_score(why["divergence"], why["unison"], why["drawdown"])
         self.risk = risk
         self.state, fires = check_escalation(self.state, risk)
         if fires:
             views = [cast(View, self.book[s]) for s in RING if s in self.book]
             try:
-                card = escalation(replay.name, date, risk, views)
+                card = escalation(replay.name, date, risk, views, why)
             except ValueError:
                 card = None
             if card is not None and card["id"] not in self.decided:
