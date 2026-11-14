@@ -12,12 +12,44 @@
     button:hover { background: #262d58; }
     #status { opacity: .7; font-size: .9rem; }
     footer { position: fixed; bottom: .5rem; font-size: .75rem; opacity: .5; }
+    #feed-status { font-size: .8rem; opacity: .6; }
+    #now { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+    #desk { border-collapse: collapse; font-size: .85rem; width: min(720px, 92vw); }
+    #desk td { padding: .2rem .5rem; border-bottom: 1px solid #222; }
+    #desk td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    #desk td.line { opacity: .75; }
+    #card[hidden] { display: none; }
+    #card { position: fixed; inset: 0; background: rgba(5, 6, 10, .75); display: flex;
+            align-items: center; justify-content: center; padding: 1rem; z-index: 10; }
+    #card .panel { background: #14171f; border: 1px solid #c0392b; border-radius: 12px;
+                   padding: 1.5rem; width: min(640px, 100%); max-height: 92vh; overflow: auto;
+                   display: flex; flex-direction: column; gap: .8rem; }
+    #card h2 { margin: 0; font-size: 1.9rem; }
+    #card .tag { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; opacity: .6; margin: 0; }
+    #card ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .4rem; }
+    #card li { display: grid; grid-template-columns: 5.5rem 6rem 1fr; gap: .5rem; align-items: baseline; font-size: .85rem; }
+    .chip { border-radius: 999px; padding: .1rem .6rem; text-align: center; font-size: .75rem; border: 1px solid; }
+    .chip.support { color: #5fd38d; border-color: #5fd38d; }
+    .chip.neutral { color: #aab; border-color: #667; }
+    .chip.dissent { color: #ff7b72; border-color: #ff7b72; }
+    #card input, #card textarea { background: #0b0d12; color: inherit; border: 1px solid #333;
+                                  border-radius: 6px; padding: .5rem; font: inherit; }
+    #card .buttons { display: flex; gap: .8rem; }
+    #card .buttons button { flex: 1; }
+    #card-approve { border-color: #5fd38d; background: #12301f; }
+    #card-veto { border-color: #ff7b72; background: #3a1614; }
+    #card-error { color: #ff7b72; min-height: 1.2em; font-size: .85rem; margin: 0; }
+    #card-open-for { font-size: .75rem; opacity: .6; }
+    #decisions { font-size: .8rem; opacity: .8; list-style: none; padding: 0; margin: 0; }
   </style>
 </head>
 <body>
   <h1>Canary</h1>
   <button id="start-audio" type="button">Start audio</button>
   <div id="status">Audio not started.</div>
+  <div id="feed-status">connecting...</div>
+  <div id="now">&nbsp;</div>
+  <table id="desk" aria-label="Latest view per analyst"><tbody></tbody></table>
   <label for="unison">Unison <output id="unison-readout">0.00</output></label>
   <input id="unison" type="range" min="0" max="1" step="0.01" value="0" style="width: min(480px, 80vw)">
   <label for="risk">Risk <output id="risk-readout">0.00</output></label>
@@ -36,10 +68,33 @@
     <label><input type="checkbox" data-voice="contrarian"> contrarian (pluck)</label>
     <label><input type="checkbox" id="mute-risk"> risk (drone + click)</label>
   </fieldset>
+  <ul id="decisions" aria-label="Decision log"></ul>
+
+  <div id="card" role="dialog" aria-modal="true" aria-labelledby="card-action" hidden>
+    <div class="panel">
+      <p class="tag">Decided by code</p>
+      <h2 id="card-action"></h2>
+      <div id="card-rule"></div>
+      <div id="card-numbers"></div>
+      <p class="tag">Explained by AI (one line each; the numbers above decided)</p>
+      <ul id="card-votes"></ul>
+      <input id="card-name" type="text" placeholder="Your name (required)" autocomplete="name">
+      <textarea id="card-reason" rows="2" placeholder="Reason (required to veto)"></textarea>
+      <p id="card-error" role="alert"></p>
+      <div class="buttons">
+        <button id="card-approve" type="button">Approve</button>
+        <button id="card-veto" type="button">Veto</button>
+      </div>
+      <span id="card-open-for"></span>
+    </div>
+  </div>
   <footer>Historical replay of a hypothetical portfolio, for demonstration only.</footer>
 
   <script src="vendor/tone.js"></script>
   <script src="music.js"></script>
+  <script src="mock/replay2020.js" onerror="console.warn('no mock recording')"></script>
+  <script src="feed.js"></script>
+  <script src="card.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
