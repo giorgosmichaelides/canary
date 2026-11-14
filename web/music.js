@@ -12,8 +12,8 @@ const Music = (() => {
   /** Pitch classes of the shared D minor pentatonic scale (D F G A C), in semitones from D. */
   const SCALE = [0, 3, 5, 7, 10];
 
-  /** Tempo in beats per minute (calm tempo from CLAUDE.md section 8). */
-  const BPM = 116;
+  /** Tempo in beats per minute at risk 0 (CLAUDE.md says 116; 96 is being trialled). */
+  const BPM = 96;
 
   /** Maximum swing at unison 0 (CLAUDE.md section 8: 0.45 -> 0). */
   const MAX_SWING = 0.45;
@@ -21,8 +21,40 @@ const Music = (() => {
   /** Latest unison value, read by the sequencer on every step. */
   let unison = 0;
 
+  /** Latest risk value, read by the sequencer and the risk voice. */
+  let risk = 0;
+
+  /** True when the risk voice (drone and click) is muted from the page. */
+  let riskMuted = false;
+
+  /** Tempo at risk 1 (bpm). */
+  const MIN_BPM = 70;
+
+  /** Drone gain node and click synth, built in build(). */
+  let droneGain = null;
+  let clickSynth = null;
+
   /** True once the synths and sequencer have been built. */
   let built = false;
+
+  /**
+   * Map risk to tempo, sliding linearly from BPM at 0 to MIN_BPM at 1.
+   * @param {number} r Risk, 0..1.
+   * @returns {number} Beats per minute.
+   */
+  function riskToBpm(r) {
+    return BPM + (MIN_BPM - BPM) * r;
+  }
+
+  /**
+   * Push the current risk to the drone gain and tempo (smoothed to avoid zipper noise).
+   * @returns {void}
+   */
+  function applyRisk() {
+    // Drone: silent at risk 0, rising to about -5 dB at risk 1 (cubed, so it swells at the top).
+    droneGain.gain.rampTo(riskMuted ? 0 : 0.55 * risk ** 3, 0.1);
+    Tone.Transport.bpm.rampTo(riskToBpm(risk), 0.1);
+  }
 
   /**
    * Convert a scale degree into a MIDI note, wrapping up an octave every 5 degrees.
@@ -68,14 +100,17 @@ const Music = (() => {
    */
   const voices = {
     fx: {
-      // Jazz walking bass: quarters with eighth pickups.
+      // Jazz walking bass: swung quarters (long) with eighth-note pickups (short)
+      // that lead into the next beat, climbing the scale and falling back to the root.
       rootMidi: 38,
       rhythm: [0, 4, 8, 10, 12, 14],
-      melody: [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 4, 0, 3, 0],
+      melody: [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 3, 0, 2, 0],
       thresholds: makeThresholds(0),
-      /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
-      play(time, degree, own) {
-        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], own ? "8n" : "16n", time, 0.9);
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
+        const quarter = step % 4 === 0;
+        const dur = quarter ? "8n." : "16n";
+        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], dur, time, quarter ? 0.9 : 0.6);
       },
     },
     havens: {
@@ -91,23 +126,27 @@ const Music = (() => {
       },
     },
     commodity: {
-      // Rock root-and-fifth, distorted, driving eighths.
+      // Rock root-and-fifth power chords: palm-muted driving eighths with
+      // accents on the beat (strongest on 1 and 3), a riff that lifts at the bar end.
       rootMidi: 50,
       rhythm: [0, 2, 4, 6, 8, 10, 12, 14],
       melody: [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 3, 0, 2, 0],
       thresholds: makeThresholds(11),
-      /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
-      play(time, degree, own) {
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
         const fifth = Math.round(degree + 3 * (1 - unison));
         const notes = toFreqs([degreeToMidi(this.rootMidi, degree), degreeToMidi(this.rootMidi, fifth)]);
-        this.synth.triggerAttackRelease(notes, own ? "16n" : "8n", time, 0.8);
+        const accent = step % 8 === 0 ? 0.95 : step % 4 === 0 ? 0.75 : 0.5;
+        const dur = own ? (step % 4 === 0 ? "8n" : "32n") : "8n";
+        this.synth.triggerAttackRelease(notes, dur, time, accent);
       },
     },
     contrarian: {
-      // Syncopated pluck: off-beats only.
+      // Syncopated bell-like pluck: off-beat eighths plus a skipping sixteenth,
+      // never on the beat, with a short answering phrase.
       rootMidi: 74,
-      rhythm: [2, 6, 10, 14],
-      melody: [0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 3, 0, 0, 0, 1, 0],
+      rhythm: [2, 6, 7, 10, 14, 15],
+      melody: [0, 0, 2, 0, 0, 0, 4, 3, 0, 0, 2, 0, 0, 0, 1, 0],
       thresholds: makeThresholds(3),
       /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
       play(time, degree, own) {
@@ -138,41 +177,74 @@ const Music = (() => {
   function build() {
     const reverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
 
+    // fx: warm upright-style bass (triangle through a closing low-pass), panned left.
     voices.fx.synth = new Tone.MonoSynth({
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 0.2 },
-      filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.3, baseFrequency: 150, octaves: 2 },
-    }).toDestination();
-    voices.fx.synth.volume.value = -4;
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.01, decay: 0.25, sustain: 0.6, release: 0.25 },
+      filter: { type: "lowpass", Q: 1 },
+      filterEnvelope: { attack: 0.005, decay: 0.25, sustain: 0.35, baseFrequency: 250, octaves: 2.5 },
+    }).connect(new Tone.Panner(-0.6).toDestination());
+    voices.fx.synth.volume.value = 2;
 
+    // havens: wide, slow detuned pad with chorus and a long reverb, centred.
+    const padReverb = new Tone.Reverb({ decay: 6, wet: 0.5 }).toDestination();
+    const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.7, wet: 0.6 }).start().connect(padReverb);
     voices.havens.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "sine" },
-      envelope: { attack: 0.8, decay: 0.5, sustain: 0.8, release: 2 },
-    }).connect(reverb);
-    voices.havens.synth.volume.value = -14;
+      oscillator: { type: "fatsine", count: 3, spread: 25 },
+      envelope: { attack: 1.2, decay: 0.5, sustain: 0.8, release: 3 },
+    }).connect(chorus);
+    voices.havens.synth.volume.value = -9;
 
-    const dist = new Tone.Distortion(0.6).toDestination();
+    // commodity: gritty distorted saw power chords, dark filter, panned right.
+    const crunchPan = new Tone.Panner(0.35).toDestination();
+    const crunchFilter = new Tone.Filter(2400, "lowpass").connect(crunchPan);
+    const dist = new Tone.Distortion(0.6).connect(crunchFilter);
     voices.commodity.synth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "sawtooth" },
-      envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.1 },
+      envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 0.08 },
     }).connect(dist);
-    voices.commodity.synth.volume.value = -20;
+    voices.commodity.synth.volume.value = -28;
 
-    voices.contrarian.synth = new Tone.Synth({
-      oscillator: { type: "square" },
-      envelope: { attack: 0.002, decay: 0.12, sustain: 0, release: 0.1 },
-    }).connect(reverb);
-    voices.contrarian.synth.volume.value = -16;
+    // contrarian: bright FM bell-pluck, panned left-ish into a ping-pong echo.
+    const echo = new Tone.PingPongDelay({ delayTime: "8n.", feedback: 0.3, wet: 0.25 }).connect(reverb);
+    voices.contrarian.synth = new Tone.FMSynth({
+      harmonicity: 3.01,
+      modulationIndex: 12,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.2 },
+      modulation: { type: "square" },
+      modulationEnvelope: { attack: 0.002, decay: 0.15, sustain: 0, release: 0.1 },
+    }).connect(new Tone.Panner(-0.5).connect(echo));
+    voices.contrarian.synth.volume.value = -10;
+
+    // Risk voice: low D drone (D1 + D2 for audibility on laptop speakers) and a click.
+    droneGain = new Tone.Gain(0).toDestination();
+    for (const midi of [26, 38]) {
+      new Tone.Oscillator(Tone.Frequency(midi, "midi").toFrequency(), "sine").connect(droneGain).start();
+    }
+    clickSynth = new Tone.MembraneSynth({
+      pitchDecay: 0.008,
+      octaves: 2,
+      envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.02 },
+    }).toDestination();
+    clickSynth.volume.value = -6;
+    applyRisk();
+
+    // Re-apply any mutes set from the page before the synths existed.
+    for (const voice of Object.values(voices)) applyMute(voice);
 
     let step = 0;
-    Tone.Transport.bpm.value = BPM;
+    Tone.Transport.bpm.value = riskToBpm(risk);
     Tone.Transport.swingSubdivision = "8n";
     Tone.Transport.scheduleRepeat((time) => {
       const u = unison;
       Tone.Transport.swing = MAX_SWING * (1 - u);
+      if (step % 4 === 0 && !riskMuted) {
+        clickSynth.triggerAttackRelease("A5", "32n", time, 0.03 + 0.97 * risk ** 3);
+      }
       for (const voice of Object.values(voices)) {
         const d = decide(voice, step, u);
-        if (d.play) voice.play(time, d.degree, d.own);
+        if (d.play) voice.play(time, d.degree, d.own, step);
       }
       step = (step + 1) % 16;
     }, "16n");
@@ -199,5 +271,52 @@ const Music = (() => {
     unison = Math.min(1, Math.max(0, value));
   }
 
-  return { start, setUnison };
+  /**
+   * Set the risk level. Safe to call at any time, before or after start().
+   * Drives drone gain, click level and tempo (116 bpm at 0 down to 70 at 1).
+   * @param {number} value Risk, clamped to 0..1.
+   * @returns {void}
+   */
+  function setRisk(value) {
+    risk = Math.min(1, Math.max(0, value));
+    if (built) applyRisk();
+  }
+
+  /**
+   * Mute or unmute one voice, for auditioning voices one at a time.
+   * Safe to call before start(); the state is applied when the synths exist.
+   * @param {string} name Voice name: fx, havens, commodity or contrarian.
+   * @param {boolean} muted True to silence the voice.
+   * @returns {void}
+   */
+  function setMute(name, muted) {
+    const voice = voices[name];
+    if (!voice) return;
+    voice.muted = muted;
+    applyMute(voice);
+  }
+
+  /**
+   * Apply a voice's mute flag by moving its synth volume to silence or back to its base level.
+   * (`synth.volume` is a Tone Param, which has no `mute` property of its own.)
+   * @param {Object} voice One entry of `voices`.
+   * @returns {void}
+   */
+  function applyMute(voice) {
+    if (!voice.synth) return;
+    if (voice.baseVolume === undefined) voice.baseVolume = voice.synth.volume.value;
+    voice.synth.volume.value = voice.muted ? -Infinity : voice.baseVolume;
+  }
+
+  /**
+   * Mute or unmute the risk voice (drone and click).
+   * @param {boolean} muted True to silence drone and click.
+   * @returns {void}
+   */
+  function setRiskMute(muted) {
+    riskMuted = muted;
+    if (built) applyRisk();
+  }
+
+  return { start, setUnison, setRisk, setMute, setRiskMute };
 })();

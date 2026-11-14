@@ -36,13 +36,30 @@ function onUnisonInput() {
 }
 
 /**
+ * Push the risk slider value to the sound engine and the readout.
+ * @returns {void}
+ */
+function onRiskInput() {
+  const value = parseFloat(document.getElementById("risk").value);
+  document.getElementById("risk-readout").textContent = value.toFixed(2);
+  Music.setRisk(value);
+}
+
+/**
  * Wire up the page once the DOM is ready.
  * @returns {void}
  */
 function init() {
   document.getElementById("start-audio").addEventListener("click", startAudio);
   document.getElementById("unison").addEventListener("input", onUnisonInput);
+  document.getElementById("risk").addEventListener("input", onRiskInput);
+  for (const box of document.querySelectorAll("#voices input[data-voice]")) {
+    box.addEventListener("change", () => Music.setMute(box.dataset.voice, box.checked));
+  }
+  const riskBox = document.getElementById("mute-risk");
+  riskBox.addEventListener("change", () => Music.setRiskMute(riskBox.checked));
   onUnisonInput();
+  onRiskInput();
 }
 
 init();
