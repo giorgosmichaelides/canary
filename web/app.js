@@ -11,6 +11,8 @@ const ANALYSTS = ["fx", "havens", "commodity", "contrarian"];
 const VOICE_LABELS = {
   default: { fx: "fx (walking bass)", havens: "havens (pad)", commodity: "commodity (rock)", contrarian: "contrarian (bell pluck)" },
   classical: { fx: "fx (cello)", havens: "havens (violins)", commodity: "commodity (piano)", contrarian: "contrarian (pizzicato)" },
+  metal: { fx: "fx (bass + double kick)", havens: "havens (choir)", commodity: "commodity (rhythm guitar + snare)", contrarian: "contrarian (lead guitar)" },
+  phonk: { fx: "fx (808 + kick)", havens: "havens (tape pad)", commodity: "commodity (cowbell + clap)", contrarian: "contrarian (lead + hats)" },
 };
 
 /** Seconds without a heartbeat (or a view) before an analyst counts as down (DESIGN.md: 3.0 s). */

@@ -413,11 +413,131 @@ const Music = (() => {
     },
   };
 
-  /** Style presets: name -> voice set. */
-  const styles = { default: voices, classical: classicalVoices };
 
-  /** Maximum swing per style (classical lines are played straight). */
-  const swingByStyle = { default: MAX_SWING, classical: 0 };
+  /**
+   * Metal preset: palm-muted gallop bass with double kick, a dark choir, a
+   * distorted 3-3-2 rhythm-guitar riff with a half-time snare, and a screaming
+   * lead. Drums belong to an analyst (kick: fx, snare: commodity), so they
+   * follow its convergence and mute, and drop out when it is covered.
+   * @type {Object<string, Object>}
+   */
+  const metalVoices = {
+    fx: {
+      // Bass + double kick: gallop (eighth, two sixteenths), lifting at the bar end.
+      rootMidi: 38,
+      rhythm: [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15],
+      melody: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 2],
+      thresholds: makeThresholds(0),
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
+        const accent = step % 4 === 0 ? 0.95 : 0.7;
+        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], "16n", time, accent);
+        if (this.drums) this.drums.kick.triggerAttackRelease("D2", "16n", time, accent);
+      },
+    },
+    havens: {
+      // Dark choir: one sustained chord per bar.
+      rootMidi: 62,
+      rhythm: [0],
+      melody: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      thresholds: makeThresholds(5),
+      /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
+      play(time, degree, own) {
+        const chord = toFreqs([0, 2, 4].map((d) => degreeToMidi(this.rootMidi, Math.round(degree + d * (1 - unison)))));
+        this.synth.triggerAttackRelease(chord, own ? "1m" : "4n", time, 0.5);
+      },
+    },
+    commodity: {
+      // Rhythm guitar: root-fifth-octave power chords on a 3-3-2 riff; snare on beat 3.
+      rootMidi: 50,
+      rhythm: [0, 3, 6, 8, 10, 11, 14],
+      melody: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 0, 2, 0],
+      thresholds: makeThresholds(11),
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
+        const fifth = Math.round(degree + 3 * (1 - unison));
+        const notes = toFreqs([degree, fifth, degree + 5].map((d) => degreeToMidi(this.rootMidi, d)));
+        this.synth.triggerAttackRelease(notes, own ? "16n" : "8n", time, step % 8 === 0 ? 0.95 : 0.75);
+        if (this.drums && step === 8) this.drums.snare.triggerAttackRelease("16n", time, 0.9);
+      },
+    },
+    contrarian: {
+      // Lead guitar: sparse off-beat squeals that slide between notes.
+      rootMidi: 74,
+      rhythm: [6, 10, 14],
+      melody: [0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 3, 0, 0, 0, 5, 0],
+      thresholds: makeThresholds(3),
+      /** @param {number} time @param {number} degree @returns {void} */
+      play(time, degree) {
+        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], "8n", time, 0.8);
+      },
+    },
+  };
+
+  /**
+   * Phonk preset: gliding 808 with kick, a wobbly tape pad, the pitched cowbell
+   * riff with a half-time clap, and a gritty lead over trap hats. Drums belong
+   * to an analyst (kick: fx, clap: commodity, hats: contrarian).
+   * @type {Object<string, Object>}
+   */
+  const phonkVoices = {
+    fx: {
+      // 808 + kick: three hits per bar, sliding up to A before the bar ends.
+      rootMidi: 38,
+      rhythm: [0, 7, 10],
+      melody: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0],
+      thresholds: makeThresholds(0),
+      /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
+      play(time, degree, own) {
+        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], own ? "4n." : "8n", time, 0.9);
+        if (this.drums) this.drums.kick.triggerAttackRelease("D2", "8n", time, 0.9);
+      },
+    },
+    havens: {
+      // Tape pad: one wobbly chord per bar.
+      rootMidi: 62,
+      rhythm: [0],
+      melody: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      thresholds: makeThresholds(5),
+      /** @param {number} time @param {number} degree @param {boolean} own @returns {void} */
+      play(time, degree, own) {
+        const chord = toFreqs([0, 2, 4].map((d) => degreeToMidi(this.rootMidi, Math.round(degree + d * (1 - unison)))));
+        this.synth.triggerAttackRelease(chord, own ? "1m" : "4n", time, 0.45);
+      },
+    },
+    commodity: {
+      // Pitched cowbell riff (one octave up, D4, so it rings like the 808 cowbell); clap on beat 3.
+      rootMidi: 62,
+      rhythm: [0, 3, 6, 8, 10, 12, 14],
+      melody: [2, 0, 0, 2, 0, 0, 1, 0, 0, 0, 3, 0, 2, 0, 4, 0],
+      thresholds: makeThresholds(11),
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
+        this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], "16n", time, step % 4 === 0 ? 0.9 : 0.7);
+        if (this.drums && step === 8) this.drums.clap.triggerAttackRelease("16n", time, 0.9);
+      },
+    },
+    contrarian: {
+      // Trap hats on the off-beats with a roll at the bar end; a lead stab on two of them.
+      rootMidi: 74,
+      rhythm: [2, 6, 10, 13, 14, 15],
+      melody: [0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 3, 0],
+      thresholds: makeThresholds(3),
+      /** @param {number} time @param {number} degree @param {boolean} own @param {number} step @returns {void} */
+      play(time, degree, own, step) {
+        if (this.drums) this.drums.hat.triggerAttackRelease("32n", time, step >= 13 ? 0.5 : 0.8);
+        if (!own || step === 6 || step === 14) {
+          this.synth.triggerAttackRelease(toFreqs([degreeToMidi(this.rootMidi, degree)])[0], "8n", time, 0.75);
+        }
+      },
+    },
+  };
+
+  /** Style presets: name -> voice set. */
+  const styles = { default: voices, classical: classicalVoices, metal: metalVoices, phonk: phonkVoices };
+
+  /** Maximum swing per style (classical and metal are played straight; phonk has a light shuffle). */
+  const swingByStyle = { default: MAX_SWING, classical: 0, metal: 0, phonk: 0.12 };
 
   /** Name of the active style. */
   let styleName = "default";
@@ -531,6 +651,148 @@ const Music = (() => {
     if (built) applyRisk();
   }
 
+
+  /**
+   * Route a drum through its analyst's dry gain, so trust and mute apply to it.
+   * @param {Object} voice One entry of a voice set (already wired).
+   * @param {Object} synth The drum synth.
+   * @returns {Object} The drum synth.
+   */
+  function drum(voice, synth) {
+    synth.connect(voice.dry);
+    return synth;
+  }
+
+  /**
+   * Build the Metal preset's synths (lazily, the first time it is chosen).
+   * @returns {void}
+   */
+  function buildMetal() {
+    const room = new Tone.Reverb({ decay: 2.5, wet: 0.2 }).connect(musicBus);
+
+    // fx bass: short saw, heavy drive, dark cab, slightly left; double kick.
+    const bassDrive = new Tone.Distortion(0.8).connect(new Tone.Filter(1500, "lowpass").connect(new Tone.Panner(-0.3).connect(musicBus)));
+    wire(metalVoices.fx, new Tone.MonoSynth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.002, decay: 0.12, sustain: 0.2, release: 0.05 },
+      filter: { type: "lowpass", Q: 1 },
+      filterEnvelope: { attack: 0.002, decay: 0.1, sustain: 0.3, baseFrequency: 300, octaves: 2 },
+    }), bassDrive);
+    metalVoices.fx.synth.volume.value = -16;
+    metalVoices.fx.drums = {
+      kick: drum(metalVoices.fx, new Tone.MembraneSynth({
+        pitchDecay: 0.03, octaves: 5, envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.05 },
+      })),
+    };
+    metalVoices.fx.drums.kick.volume.value = -6;
+
+    // havens choir: wide detuned saws, slow attack, dark filter, reverb.
+    wire(metalVoices.havens, new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "fatsawtooth", count: 2, spread: 30 },
+      envelope: { attack: 0.8, decay: 0.5, sustain: 0.8, release: 2.5 },
+    }), new Tone.Filter(1400, "lowpass").connect(room));
+    metalVoices.havens.synth.volume.value = -20;
+
+    // commodity rhythm guitar: saw power chords into heavy distortion and a cab filter, right; snare.
+    const cab = new Tone.Filter(100, "highpass").connect(new Tone.Filter(3500, "lowpass").connect(new Tone.Panner(0.35).connect(musicBus)));
+    wire(metalVoices.commodity, new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.003, decay: 0.15, sustain: 0.5, release: 0.05 },
+    }), new Tone.Distortion(0.95).connect(cab));
+    metalVoices.commodity.synth.volume.value = -28;
+    metalVoices.commodity.drums = {
+      snare: drum(metalVoices.commodity, new Tone.NoiseSynth({
+        noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
+      })),
+    };
+    metalVoices.commodity.drums.snare.volume.value = -12;
+
+    // contrarian lead: gliding square, driven, with a short echo.
+    const leadEcho = new Tone.FeedbackDelay({ delayTime: "8n", feedback: 0.25, wet: 0.2 }).connect(room);
+    wire(metalVoices.contrarian, new Tone.MonoSynth({
+      portamento: 0.04,
+      oscillator: { type: "square" },
+      envelope: { attack: 0.01, decay: 0.3, sustain: 0.6, release: 0.3 },
+      filter: { type: "lowpass", Q: 2 },
+      filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.7, baseFrequency: 1200, octaves: 2 },
+    }), new Tone.Distortion(0.85).connect(new Tone.Filter(4000, "lowpass").connect(leadEcho)));
+    metalVoices.contrarian.synth.volume.value = -22;
+  }
+
+  /**
+   * Build the Phonk preset's synths (lazily, the first time it is chosen).
+   * @returns {void}
+   */
+  function buildPhonk() {
+    const room = new Tone.Reverb({ decay: 2, wet: 0.2 }).connect(musicBus);
+
+    // fx 808: sine with glide, saturated, low-passed; kick on every hit.
+    wire(phonkVoices.fx, new Tone.MonoSynth({
+      portamento: 0.06,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.005, decay: 1.2, sustain: 0.4, release: 0.3 },
+      filter: { type: "lowpass", Q: 0.5 },
+      filterEnvelope: { attack: 0.005, decay: 0.3, sustain: 1, baseFrequency: 900, octaves: 0 },
+    }), new Tone.Distortion(0.4).connect(new Tone.Filter(900, "lowpass").connect(musicBus)));
+    phonkVoices.fx.synth.volume.value = -4;
+    phonkVoices.fx.drums = {
+      kick: drum(phonkVoices.fx, new Tone.MembraneSynth({
+        pitchDecay: 0.05, octaves: 4, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.05 },
+      })),
+    };
+    phonkVoices.fx.drums.kick.volume.value = -8;
+
+    // havens tape pad: detuned saws through a band-pass with a slow, deep wobble.
+    const wobble = new Tone.Vibrato({ frequency: 0.6, depth: 0.25 }).connect(room);
+    wire(phonkVoices.havens, new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "fatsawtooth", count: 2, spread: 20 },
+      envelope: { attack: 0.6, decay: 0.4, sustain: 0.7, release: 2 },
+    }), new Tone.Filter({ type: "bandpass", frequency: 900, Q: 1.2 }).connect(wobble));
+    phonkVoices.havens.synth.volume.value = -14;
+
+    // commodity cowbell: short square through a band-pass, right; clap.
+    wire(phonkVoices.commodity, new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.1 },
+    }), new Tone.Filter({ type: "bandpass", frequency: 1400, Q: 1.5 }).connect(new Tone.Panner(0.3).connect(room)));
+    phonkVoices.commodity.synth.volume.value = -6;
+    phonkVoices.commodity.drums = {
+      clap: drum(phonkVoices.commodity, new Tone.NoiseSynth({
+        noise: { type: "pink" }, envelope: { attack: 0.002, decay: 0.22, sustain: 0 },
+      })),
+    };
+    phonkVoices.commodity.drums.clap.volume.value = -12;
+
+    // contrarian lead: band-passed driven saw, left; hi-hats.
+    wire(phonkVoices.contrarian, new Tone.Synth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.2 },
+    }), new Tone.Filter({ type: "bandpass", frequency: 1200, Q: 2 }).connect(new Tone.Distortion(0.5).connect(new Tone.Panner(-0.3).connect(room))));
+    phonkVoices.contrarian.synth.volume.value = -14;
+    const hatOut = new Tone.Filter(7000, "highpass");
+    hatOut.connect(phonkVoices.contrarian.dry);
+    const hat = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.04, sustain: 0 } }).connect(hatOut);
+    hat.volume.value = -20;
+    phonkVoices.contrarian.drums = { hat };
+  }
+
+  /** Lazy builders per style ("default" is built in build()). */
+  const builders = { classical: buildClassical, metal: buildMetal, phonk: buildPhonk };
+  const builtStyles = new Set(["default"]);
+
+  /**
+   * Build a style's synths the first time it is needed.
+   * @param {string} name Style name.
+   * @returns {void}
+   */
+  function buildStyle(name) {
+    if (builtStyles.has(name) || !builders[name]) return;
+    builtStyles.add(name);
+    builders[name]();
+    for (const voice of Object.values(styles[name])) applyMute(voice);
+    if (built) applyRisk();
+  }
+
   /**
    * Create the four synths and the shared effects.
    * @returns {void}
@@ -603,7 +865,7 @@ const Music = (() => {
     }), new Tone.Panner(-0.5).connect(echo));
     voices.contrarian.synth.volume.value = -10;
 
-    if (styleName === "classical") buildClassical();
+    buildStyle(styleName);
 
     // Arrival hit: a thick stack of D in five octaves, played on the downbeat
     // when unison reaches ARRIVAL. Sits on top of the four voices' own D.
@@ -684,7 +946,9 @@ const Music = (() => {
         if (!d.play) continue;
         const conviction = smoothViews[sl] ? smoothViews[sl].conviction : 1;
         const synth = player(instrument.synth, 0.35 + 0.65 * conviction);
-        pattern.play.call({ ...pattern, synth }, time, d.degree, d.own, step);
+        // An analyst's drums only play on its own instrument: a covered part loses them.
+        const drums = instrument === pattern ? pattern.drums : null;
+        pattern.play.call({ ...pattern, synth, drums }, time, d.degree, d.own, step);
       }
       step = (step + 1) % 16;
     }, "16n");
@@ -809,9 +1073,10 @@ const Music = (() => {
   }
 
   /**
-   * Switch the style preset. Notes still sounding in the old preset are released.
+   * Switch the style preset (default, classical, metal, phonk) at the next bar line.
+   * Notes still sounding in the old preset are released.
    * Safe to call before start().
-   * @param {string} name Preset name: "default" or "classical".
+   * @param {string} name Preset name: "default", "classical", "metal" or "phonk".
    * @returns {void}
    */
   function setStyle(name) {
@@ -820,7 +1085,7 @@ const Music = (() => {
       styleName = name;
       return;
     }
-    if (name === "classical") buildClassical();
+    buildStyle(name);
     // Switch at the next bar line, so a pattern never changes mid-bar.
     pendingStyle = name === styleName ? null : name;
   }
@@ -844,9 +1109,11 @@ const Music = (() => {
    * @returns {void}
    */
   function applyMute(voice) {
-    if (!voice.synth) return;
-    if (voice.baseVolume === undefined) voice.baseVolume = voice.synth.volume.value;
-    voice.synth.volume.value = voice.muted ? -Infinity : voice.baseVolume;
+    for (const synth of [voice.synth, ...Object.values(voice.drums || {})]) {
+      if (!synth) continue;
+      if (synth.baseVolume === undefined) synth.baseVolume = synth.volume.value;
+      synth.volume.value = voice.muted ? -Infinity : synth.baseVolume;
+    }
   }
 
   /**
