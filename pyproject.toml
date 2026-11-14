@@ -1,6 +1,7 @@
 [tool.mypy]
 strict = true
 python_version = "3.11"
+explicit_package_bases = true  # treat scripts/ and tests/ as packages from the repo root
 
 [tool.black]
 target-version = ["py311"]
