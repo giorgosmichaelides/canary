@@ -21,9 +21,11 @@ SERIES: dict[str, tuple[str, bool]] = {
     "NOK": ("DEXNOUS", True),
 }
 
-# Two date ranges: the 2020 crash, and the 2024 yen crash (our test case).
+# Date ranges: the 2020 crash (tuned on), plus 2008, 2022 and 2024 (tested on).
 WINDOWS: list[tuple[str, str]] = [
+    ("2008-05-01", "2008-12-31"),
     ("2019-11-01", "2020-04-30"),
+    ("2022-05-02", "2022-11-30"),
     ("2024-05-01", "2024-08-30"),
 ]
 

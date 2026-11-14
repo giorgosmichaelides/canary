@@ -23,13 +23,22 @@ Say: 8 trading days ahead of a 7.5–10% stop, 3 days **behind** a tight 5% stop
 | The Canary card | 22 Aug | 13 **after** | −0.6% |
 | 5% / 7.5% / 10% drawdown stop | never | – | – |
 
-The basket only fell 3.2%, so there was no early warning. Say so. (A 31 May 2024 card is before the window, with only 20 days of history.)
+The basket only fell 3.2%, so there was no early warning. Say so. (A 31 May 2024 card is a warm-up card: before the window, with under 40 days of history.)
+
+**More out-of-sample crises**, same thresholds. Windows were fixed around the events before looking at results, except that 2008 was moved to start on 1 Jul (from 1 Sep, Lehman) because the commodity currencies were already 10% down by September, which made the stop rows meaningless. Cards with under 40 days of history are labelled warm-up.
+
+| Crisis (window) | Low | Canary card | 5% stop | 7.5% stop | 10% stop | Peak correlation |
+|---|---|---|---|---|---|---|
+| 2008 (1 Jul – 31 Dec) | 27 Oct, −30.0% | 8 Aug: 54 days before, −7.4% | 6 Aug: 56 | 11 Aug: 53 | 2 Sep: 38 | 0.79 |
+| 2022 (1 Aug – 30 Nov) | 14 Oct, −11.8% | never | 1 Sep: 29 | 21 Sep: 16 | 26 Sep: 13 | 0.84 |
+
+2008: the card fires with a 5–7.5% stop, so there is no lead, then risk stays high so the rule never re-arms. 2022: risk stayed above 0.50 from June (the dollar rallied all year), so after a warm-up card on 2 Jun the rule never re-armed. Merging generalises; early warning does not.
 
 ## 2. Timing and data
 
 **Replay** `2020-02-03` to `2020-04-09`: **48 trading days** × 2 s ≈ 96 s. (Counting check: 49 weekdays in that range, minus Presidents' Day 17 Feb, which has no H.10 data; Good Friday 10 Apr is outside the range. `data/fx_daily.csv` has 48 rows in the range.) One tick = one bar only at 116 bpm; at slower tempos bars are longer than ticks. The score view is keyed on dates, never bars.
 
-**Data:** `data/fx_daily.csv`: `date,EUR,GBP,JPY,CHF,AUD,CAD,NOK`, every value in US dollars per unit, so down always means weaker against the dollar. Source Fed H.10. Covers 2019-11-01 to 2020-04-30 and 2024-05-01 to 2024-08-30 (enough for 60-day windows). If SGX's data covers any of these, cross-check one series and mention it in the pitch. If the file is missing, generate a clearly labelled synthetic tape and show "SYNTHETIC DATA" on screen.
+**Data:** `data/fx_daily.csv`: `date,EUR,GBP,JPY,CHF,AUD,CAD,NOK`, every value in US dollars per unit, so down always means weaker against the dollar. Source Fed H.10. Covers 2008-05-01 to 2008-12-31, 2019-11-01 to 2020-04-30, 2022-05-02 to 2022-11-30 and 2024-05-01 to 2024-08-30 (enough for 60-day windows). Replays: `2020` (the demo), `2024`, `2008`, `2022` (see `canary.sim.REPLAYS`). If SGX's data covers any of these, cross-check one series and mention it in the pitch. If the file is missing, generate a clearly labelled synthetic tape and show "SYNTHETIC DATA" on screen.
 
 Slices: `fx` = EUR, GBP · `havens` = JPY, CHF · `commodity` = AUD, CAD, NOK · `contrarian` = all groups.
 

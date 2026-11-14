@@ -35,6 +35,7 @@ Layout below is the target.
 - Lead time is only what `scripts/measure.py` prints (table in `docs/DESIGN.md`). Say: ahead of a 7.5–10% stop, **behind** a tight 5% stop. Cards on 8 Jan and 31 Jan are **false alarms**; call them that. Thresholds were tuned on 2020.
 - Run 2024-07-01 to 2024-08-30 (yen unwind) with the **same thresholds** and report whatever it shows, including "no card". **Result:** no early warning. The only card is 22 Aug, 13 trading days *after* the 5 Aug low; no stop fired (the commodity basket fell only 3.2%). Say: "Same thresholds on 2024: no early warning. That crash was in the yen, not commodity currencies."
 - High unison means "everything moved together against the dollar", not "crash": late August 2024 reaches full unison because the dollar weakened across the board.
+- **Other crises, same thresholds** (`python scripts/measure.py`): the band merges in every one (peak correlation 0.79 in 2008, 0.84 in 2022, 0.79 in 2024), but early warning **does not generalise**. 2008: card 8 Aug, between the 5% and 7.5% stops (no lead). 2022: no card at all (risk stayed high all through the dollar rally). Say: "We tried three other crises. You can hear the correlation in all of them; the early warning only worked in 2020, the year we tuned on. That's why we don't claim prediction."
 - Lead with the sound of unison, not the lead-time number. Re-run `measure.py` after any code change and update the table if numbers move.
 
 ## Architecture
