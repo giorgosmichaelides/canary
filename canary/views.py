@@ -27,7 +27,7 @@ REBOUND_BOUNCE_DAYS = 3  # days the bounce off the low is measured over
 # Escalation rule (docs/DESIGN.md section 4). Tuned on 2020; do not change.
 RAISE_AT = 0.50  # risk at or above this...
 RAISE_DAYS = 2  # ...for this many days in a row raises a card
-REARM_BELOW = 0.30  # after a card, risk must drop below this before another
+REARM_BELOW = 0.40  # after a card, risk must drop below this before another
 BIG_CUT_AT = 0.75  # risk at or above this proposes the bigger cut
 CUT = 0.30  # normal proposal: cut the weakest slice by 30%
 BIG_CUT = 0.50  # bigger proposal: cut it by 50%

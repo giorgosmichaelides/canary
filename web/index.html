@@ -45,6 +45,28 @@
     #now .rebound { display: inline-block; vertical-align: middle; margin-left: 10px; font: 600 12px/1.4 var(--sans);
                     color: var(--green); border: 1px solid currentColor; padding: 1px 7px; border-radius: 3px; }
     .topbar .right { display: flex; justify-content: flex-end; align-items: center; gap: 16px; }
+    #ended { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; box-shadow: 0 -4px 18px rgba(0,0,0,.45); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 16px;
+             padding: 12px 16px; background: var(--canary); color: var(--canary-ink); font-size: 16px; }
+    #ended[hidden] { display: none; }
+    #ended strong { font-size: 18px; text-transform: uppercase; letter-spacing: .04em; }
+    #ended .actions { display: flex; gap: 8px; }
+    #ended button { font: inherit; font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 4px;
+                    border: 2px solid var(--canary-ink); background: var(--canary-ink); color: var(--canary); }
+    #ended button.ghost { background: transparent; color: var(--canary-ink); }
+    body.replay-ended #now { opacity: .55; }
+    .analyst-help { margin: 12px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .analyst-help summary { cursor: pointer; color: var(--text); font-weight: 600; }
+    .analyst-help dl { margin: 8px 0 0; }
+    .analyst-help dt { color: var(--text); font-weight: 600; margin-top: 6px; }
+    .analyst-help dd { margin: 0; }
+    .transport { display: flex; align-items: center; gap: 6px; }
+    .transport button { font-size: 13px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line-2);
+                        background: transparent; color: var(--text); min-width: 34px; }
+    .transport button:hover { border-color: var(--canary); }
+    #playpause { min-width: 62px; }
+    #speed-readout { font-size: 13px; color: var(--muted); min-width: 34px; text-align: center; }
+    .volume { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-left: 6px; }
+    .volume input { width: 84px; accent-color: var(--canary); }
     #feed-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
     #feed-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
     #feed-status[data-mode="live"] { color: var(--text); }
@@ -65,6 +87,7 @@
     .reading .label { display: block; font: 600 15px/1.2 var(--serif); }
     .reading output { display: block; margin: 6px 0 10px; font: 650 42px/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
     .reading output small { font-size: 18px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+    .reading .what { display: block; font-size: 13px; line-height: 1.4; color: var(--text); opacity: .85; margin-top: 10px; }
     .reading .hint { display: block; font-size: 13px; color: var(--muted); margin-top: 8px; }
     .reading .bar { position: relative; height: 6px; background: var(--surface-3); border-radius: 1px; }
     .reading .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--canary); border-radius: 1px; transition: width .4s ease; }
@@ -137,6 +160,8 @@
     #analysts li[data-analyst="contrarian"] { --c: var(--contrarian); }
     #analysts .name { font-weight: 650; }
     #analysts .role { display: block; font-weight: 400; font-size: 13px; color: var(--muted); }
+    #analysts .about { grid-column: 1 / -1; font-size: 13px; line-height: 1.4; color: var(--text); opacity: .85; }
+    .analysts-intro { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--muted); }
     #analysts .status { justify-self: end; font-size: 13px; font-weight: 600; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
     #analysts .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
     #analysts .status.live { color: var(--green); }
@@ -308,23 +333,42 @@
       <div id="now" class="num" aria-live="polite"></div>
     </div>
     <div class="right">
+      <div class="transport" role="group" aria-label="Replay and volume controls">
+        <button id="slower" type="button" title="Slow down" aria-label="Slow down">&laquo;</button>
+        <button id="playpause" type="button" title="Pause or resume the replay" aria-label="Pause">Pause</button>
+        <button id="faster" type="button" title="Speed up" aria-label="Speed up">&raquo;</button>
+        <output id="speed-readout" title="Replay speed">1&times;</output>
+        <label class="volume" title="Volume"><span aria-hidden="true">Vol</span>
+          <input id="volume" type="range" min="0" max="1" step="0.01" value="0.75" aria-label="Volume"></label>
+      </div>
       <span class="audio-pill">Sound on</span>
       <span id="feed-status" data-mode="connecting" role="status">Connecting…</span>
     </div>
   </header>
+
+  <div id="ended" role="status" aria-live="polite" hidden>
+    <strong>Replay ended</strong>
+    <span id="ended-text">The replay has finished.</span>
+    <span class="actions">
+      <button id="ended-again" type="button">Replay again</button>
+      <button id="ended-pick" type="button" class="ghost">Pick another crisis</button>
+    </span>
+  </div>
 
   <section class="readings" aria-label="Desk readings, computed by every analyst">
     <div class="reading" id="m-unison">
       <span class="label">Unison</span>
       <output>0.00</output>
       <div class="bar"><div class="fill"></div></div>
+      <span class="what">How much the seven currencies move together. High means everything is moving as one against the dollar.</span>
       <span class="hint">0 = four separate parts, 1 = one note</span>
     </div>
     <div class="reading" id="m-risk">
       <span class="label">Risk</span>
       <output>0.00</output>
       <div class="bar"><div class="fill"></div><div class="mark" title="0.50: a card opens here"></div></div>
-      <span class="hint">A card opens at 0.50 (the white line)</span>
+      <span class="what">Danger score: safe havens and commodity currencies pulling apart, or everything moving in step, plus how far commodity currencies have fallen.</span>
+      <span class="hint">A card opens at 0.50 for 2 days (the white line)</span>
     </div>
     <div class="reading" id="m-tempo">
       <span class="label">Tempo</span>
@@ -373,8 +417,22 @@
       <div class="panel-box">
         <div class="head"><h2>Analysts</h2><span class="sub">line = how fresh the view is</span></div>
         <div class="body">
+          <p class="analysts-intro">Four small programs. Each one watches a group of currencies against the US dollar, decides from fixed rules whether it is bullish or bearish, and plays its own instrument. No AI makes these calls.</p>
           <ul id="analysts"></ul>
           <p class="hint">On stage: <kbd>K</kbd> kills fx, <kbd>R</kbd> brings it back.</p>
+          <details class="analyst-help" open>
+            <summary>What these buttons do</summary>
+            <p>Each analyst is its own program. They talk to each other directly, with no central server, so the desk keeps working when one fails.</p>
+            <dl>
+              <dt>Kill</dt>
+              <dd>Stops that analyst's program, with no warning. After about 3 s of silence the next analyst in the ring (fx → havens → commodity → contrarian → fx) takes over its slice. You hear the slice move to the coverer's instrument and the status says "covering".</dd>
+              <dt>Degrade</dt>
+              <dd>Throws away 75% of the analyst's messages, like a bad connection. Its freshness line fades and its part drifts into reverb. Press again to heal.</dd>
+              <dt>Revive</dt>
+              <dd>Restarts the analyst. It takes its slice back at the next bar line.</dd>
+            </dl>
+            <p>Killing fx doesn't change the 2020 card. Killing havens or commodity does: the analyst that covers reads the slice its own way, so risk comes out different (havens: card on 28 Feb; commodity: no card).</p>
+          </details>
         </div>
       </div>
 

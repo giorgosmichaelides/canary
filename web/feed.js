@@ -11,7 +11,7 @@
  * Exposes a single global: `Feed`.
  */
 const Feed = (() => {
-  /** Seconds of market time per replayed day (same as the tape's tick). */
+  /** Milliseconds per replayed day at normal speed (same as the tape's tick). */
   const TICK_MS = 2000;
 
   /** How long to wait for the relay before falling back to the recording. */
@@ -28,7 +28,7 @@ const Feed = (() => {
 
   /** Mock replay state. */
   const mock = {
-    index: 0, timer: null, hbTimer: null, paused: false, decided: new Set(), started: false, wanted: false,
+    index: 0, timer: null, hbTimer: null, paused: false, speed: 1, ended: false, decided: new Set(), started: false, wanted: false,
     down: new Map(), // analyst -> Date.now() when killed
     degraded: new Set(),
     lastTick: -1, // index of the last day whose tick was sent
@@ -121,7 +121,7 @@ const Feed = (() => {
     if (mode !== "mock" || mock.started || !Array.isArray(window.MOCK_REPLAY)) return;
     mock.started = true;
     mockStep();
-    mock.timer = setInterval(mockStep, TICK_MS);
+    mock.timer = setInterval(mockStep, TICK_MS / mock.speed);
     mock.hbTimer = setInterval(mockHeartbeats, 500);
   }
 
@@ -201,8 +201,13 @@ const Feed = (() => {
   function mockStep() {
     const days = window.MOCK_REPLAY;
     if (mock.index >= days.length) {
-      clearInterval(mock.timer);
-      handler({ type: "log", agent: "mock", text: "Replay finished." });
+      // Keep the timer running (so restart just works); announce the end once.
+      if (!mock.ended) {
+        mock.ended = true;
+        const last = days[days.length - 1];
+        handler({ type: "log", agent: "mock", text: "Replay finished." });
+        handler({ type: "end", agent: "tape", replay: (last._tick && last._tick.replay) || "2020", days: days.length, last_date: last.date });
+      }
       return;
     }
     const { _tick: tick, ...day } = days[mock.index];
@@ -271,15 +276,31 @@ const Feed = (() => {
   /**
    * Send a control command (play, pause, restart, kill, degrade, heal, revive).
    * The mock emulates all of them (kill/revive/degrade/heal per DESIGN.md timing).
-   * @param {string} cmd Command name.
-   * @param {string} [target] Analyst name, for kill/degrade/heal/revive.
+   * @param {string} cmd Command name (also "speed", which takes extra.speed).
+   * @param {string} [target] Analyst name, for kill/degrade/heal/revive; "tape" for play/pause/speed.
+   * @param {Object} [extra] More fields for the command, e.g. {speed: 2}.
    * @returns {Promise<boolean>} True if delivered.
    */
-  async function sendControl(cmd, target = "") {
+  async function sendControl(cmd, target = "", extra = {}) {
     if (mode === "mock") {
       if (cmd === "pause") mock.paused = true;
       if (cmd === "play") mock.paused = false;
-      if (cmd === "restart") mock.index = 0;
+      // Like the tape: play after the end starts again.
+      if (cmd === "restart" || (cmd === "play" && mock.ended)) {
+        mock.index = 0;
+        mock.ended = false;
+        mock.paused = false;
+        mock.lastTick = -1;
+        mock.carded.clear();
+        mock.decided.clear();
+      }
+      if (cmd === "speed" && Number.isFinite(extra.speed) && extra.speed > 0) {
+        mock.speed = extra.speed;
+        if (mock.started && mock.timer) {
+          clearInterval(mock.timer);
+          mock.timer = setInterval(mockStep, TICK_MS / mock.speed);
+        }
+      }
       if (cmd === "kill" && target && !mock.down.has(target)) {
         mock.down.set(target, Date.now());
         mock.degraded.delete(target);
@@ -287,12 +308,12 @@ const Feed = (() => {
       if (cmd === "revive") mock.down.delete(target);
       if (cmd === "degrade" && target) mock.degraded.add(target);
       if (cmd === "heal") mock.degraded.delete(target);
-      if (!["pause", "play"].includes(cmd)) {
+      if (!["pause", "play", "speed"].includes(cmd)) {
         handler({ type: "log", agent: "mock", text: `${cmd}${target ? " " + target : ""} (simulated in the mock)` });
       }
       return true;
     }
-    return (await post("/control", { cmd, target })) === true;
+    return (await post("/control", { cmd, target, ...extra })) === true;
   }
 
   return { connect, startMock, sendDecision, sendControl, get mode() { return mode; } };
