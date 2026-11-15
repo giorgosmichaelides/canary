@@ -9,8 +9,11 @@ Ctrl-C stops everything.
 
 Usage:
     python -m canary.run
-    python -m canary.run --replay 2024 --paused --no-browser
-    python -m canary.run --interval 0.5    # fast, for testing
+    python -m canary.run --replay 2024 --no-browser
+    python -m canary.run --interval 0.5 --autoplay    # fast, for testing
+
+The replay waits on its first day until someone presses Start the desk on the
+page (or play on the bus). --autoplay starts it straight away.
 """
 
 from __future__ import annotations
@@ -58,7 +61,7 @@ def command(name: str, transport: str, args: argparse.Namespace) -> list[str]:
         ]
     tape = base + ["canary.tape", "--replay", args.replay, "--transport", transport]
     tape += ["--interval", str(args.interval)]
-    return tape + (["--paused"] if args.paused else [])
+    return tape + ([] if args.autoplay else ["--paused"])
 
 
 def other_desk_running(bus: Bus, seconds: float = 1.0) -> bool:
@@ -217,8 +220,12 @@ def main() -> None:
         "--interval", type=float, default=2.0, help="seconds per trading day"
     )
     parser.add_argument(
-        "--paused", action="store_true", help="wait for play before the replay starts"
+        "--autoplay",
+        action="store_true",
+        help="start the replay at once instead of waiting for Start the desk",
     )
+    # Waiting for Start is now the default; --paused is still accepted so old commands work.
+    parser.add_argument("--paused", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-browser", action="store_true", help="don't open the page automatically"
     )
