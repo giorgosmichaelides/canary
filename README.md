@@ -6,7 +6,7 @@ Canary replays the March 2020 currency crash as live music. Four analyst process
 
 It's meant for anyone who watches markets. Correlation doesn't show on a price chart, and nobody can watch a chart all day. Leave Canary running in the background and you'll hear when everything starts moving together, even if you can't see the screen.
 
-When risk crosses a threshold, code proposes an action, each analyst gives a one-line reason for its view, and a named human approves or vetoes it.
+When risk crosses a threshold, code recommends an action, each analyst gives a one-line reason for its view, and a named human accepts or dismisses it.
 
 > Historical replay of a hypothetical portfolio, for demonstration only. The music does not predict anything; it makes correlation, which you can't see on a price chart, audible.
 
@@ -19,7 +19,7 @@ python -m canary.run            # starts everything and opens http://localhost:8
 python -m canary.run --interval 0.5   # faster, for a quick look
 ```
 
-Click **Start the desk**. The replay plays one trading day every 2 seconds; when the card appears on 2 March, enter your name and approve or veto. Press B to black out the screen and guess calm or crash by ear, K to kill the fx analyst and R to revive it.
+Click **Start the desk**. The replay plays one trading day every 2 seconds; when the recommendation card appears on 2 March, enter your name and accept or dismiss it. Press B to black out the screen and guess calm or crash by ear, K to kill the fx analyst and R to revive it.
 
 Offline tools:
 
@@ -35,7 +35,7 @@ python scripts/measure.py            # early-warning results for 2008, 2020, 202
 | `canary/signals.py`, `canary/views.py` | Pure maths: correlation, volatility, each analyst's view, the risk score and the escalation rule |
 | `canary/agent.py` | One process per analyst; they talk peer to peer over UDP, cover for a dead neighbour, and each computes risk itself |
 | `canary/tape.py`, `canary/relay.py`, `canary/run.py` | The price clock, the browser bridge (server-sent events), and the one-command launcher |
-| `web/` | The music (Tone.js), the score view, the approval card and the price vs correlation chart |
+| `web/` | The music (Tone.js), the score view, the recommendation card and the price vs correlation chart |
 | `data/fx_daily.csv` | Federal Reserve H.10 daily exchange rates, cached so the demo needs no internet |
 
 More detail: [`docs/DESIGN.md`](docs/DESIGN.md) (formulas, protocol, results) and [`docs/QA.md`](docs/QA.md) (numbers and likely questions).
