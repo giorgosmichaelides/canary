@@ -7,6 +7,14 @@
 /** The four analysts, in display order (also the takeover ring order). */
 const ANALYSTS = ["fx", "havens", "commodity", "contrarian"];
 
+/** One-line description of what each analyst watches (slices from canary/views.py). */
+const ANALYST_ABOUT = {
+  fx: "Watches the euro and the pound (EUR, GBP), the big everyday currencies.",
+  havens: "Watches the yen and the Swiss franc (JPY, CHF), where money hides in a panic.",
+  commodity: "Watches the Australian and Canadian dollars and the Norwegian krone (AUD, CAD, NOK). They follow oil and metals and usually fall first.",
+  contrarian: "Watches all seven and bets against whichever group has moved furthest.",
+};
+
 /** Instrument names, for the mute labels. */
 const VOICE_LABELS = { fx: "fx (808 + kick)", havens: "havens (tape pad)", commodity: "commodity (cowbell + clap)", contrarian: "contrarian (lead + hats)" };
 
@@ -27,6 +35,44 @@ let lastTick = null;
 
 /** Latest risk and unison from the views. */
 let latest = { risk: 0, unison: 0 };
+
+/** The `end` message once the replay has finished (null while it runs), and whether a card is open. */
+let ended = null;
+let cardOpen = false;
+
+/**
+ * Duck the music while a card waits or after the replay has ended.
+ * @returns {void}
+ */
+function updateDuck() {
+  Music.setDuck(cardOpen || ended !== null);
+}
+
+/**
+ * Show or hide the "replay ended" banner and set the play button to match.
+ * @returns {void}
+ */
+function showEnded() {
+  const banner = document.getElementById("ended");
+  banner.hidden = ended === null;
+  if (ended) {
+    const days = ended.days ? `${ended.days} trading days` : "every trading day";
+    const last = ended.last_date ? `, last day ${formatDate(ended.last_date)}` : "";
+    document.getElementById("ended-text").textContent = `Replay ${ended.replay || ""} finished: ${days}${last}.`;
+  }
+  document.body.classList.toggle("replay-ended", ended !== null);
+  showPaused();
+  updateDuck();
+}
+
+/**
+ * Start the current crisis again from its first day.
+ * @returns {Promise<void>}
+ */
+async function replayAgain() {
+  const ok = await Feed.sendControl("restart", "tape");
+  if (!ok) addLog("could not reach the relay to restart");
+}
 
 /**
  * Update the status line on the page.
@@ -181,6 +227,17 @@ function onMessage(msg) {
       for (const key of Object.keys(book)) delete book[key];
     }
     lastTick = { replay, i };
+    // Any new day means the replay is running again.
+    if (ended !== null || (i === 0 && paused)) {
+      ended = null;
+      paused = false;
+      showEnded();
+    }
+  } else if (msg.type === "end") {
+    if (lastTick && msg.replay !== undefined && String(msg.replay) !== lastTick.replay) return;
+    ended = msg;
+    showEnded();
+    addLog(`Replay ${msg.replay || ""} finished. Press Replay again or pick another crisis.`);
   } else if (msg.type === "view") {
     const views = msg.views || [];
     mergeViews(views);
@@ -265,6 +322,29 @@ function addLog(text) {
 }
 
 /**
+ * Who covers an analyst's slice when it goes down: the next analyst in the
+ * takeover ring (fx -> havens -> commodity -> contrarian -> fx) that is still up.
+ * @param {string} name Analyst that goes down.
+ * @returns {string} The coverer's name.
+ */
+function coverer(name) {
+  const i = ANALYSTS.indexOf(name);
+  for (let k = 1; k < ANALYSTS.length; k += 1) {
+    const c = ANALYSTS[(i + k) % ANALYSTS.length];
+    if (statusOf(c) !== "down") return c;
+  }
+  return ANALYSTS[(i + 1) % ANALYSTS.length];
+}
+
+/** What each command does, for the desk log. */
+const CONTROL_EXPLAIN = {
+  kill: (n) => `${n} stopped. In about 3 s ${coverer(n)} notices the silence and covers ${n}'s slice; listen for it moving to ${coverer(n)}'s instrument.`,
+  degrade: (n) => `${n} is now losing 75% of its messages. Its freshness line fades and its part drifts into reverb.`,
+  heal: (n) => `${n} healed: all its messages get through again.`,
+  revive: (n) => `${n} restarting. It takes its slice back at the next bar line.`,
+};
+
+/**
  * Build the analyst rows (status chip, trust bar, Kill / Degrade / Revive).
  * @returns {void}
  */
@@ -289,18 +369,25 @@ function buildAnalysts() {
     trust.append(document.createElement("div"));
     const buttons = document.createElement("div");
     buttons.className = "buttons";
+    const tips = {
+      kill: `Stop the ${name} process. After 3 s ${coverer(name)} takes over its slice and plays it on its own instrument.`,
+      degrade: `Drop 75% of ${name}'s messages. Its freshness line fades and its part drifts into reverb.`,
+      revive: `Restart ${name}. It takes its slice back at the next bar line.`,
+    };
     for (const [cmd, text] of [["kill", "Kill"], ["degrade", "Degrade"], ["revive", "Revive"]]) {
-      // Only fx can be killed on stage: killing havens or commodity moves or loses the 2 Mar card.
-      if (cmd === "kill" && name !== "fx") continue;
       const b = document.createElement("button");
       b.type = "button";
       b.className = "small";
+      b.title = tips[cmd];
       b.textContent = text;
       b.dataset.cmd = cmd;
       b.addEventListener("click", () => control(b.dataset.cmd, name));
       buttons.append(b);
     }
-    li.append(label, status, trust, buttons);
+    const about = document.createElement("span");
+    about.className = "about";
+    about.textContent = ANALYST_ABOUT[name];
+    li.append(label, status, about, trust, buttons);
     list.append(li);
   }
 }
@@ -315,8 +402,9 @@ async function control(cmd, target) {
   if (cmd === "degrade" && degraded.has(target)) cmd = "heal";
   if (cmd === "degrade") degraded.add(target);
   if (cmd === "heal" || cmd === "kill" || cmd === "revive") degraded.delete(target);
+  const explain = CONTROL_EXPLAIN[cmd] ? CONTROL_EXPLAIN[cmd](target) : "";
   const ok = await Feed.sendControl(cmd, target);
-  if (Feed.mode !== "mock") addLog(ok ? `you: ${cmd} ${target}` : `could not send ${cmd} ${target} (relay down?)`);
+  addLog(ok ? `you: ${cmd} ${target}. ${explain}` : `could not send ${cmd} ${target} (relay down?)`);
   const btn = document.querySelector(`#analysts li[data-analyst="${target}"] button[data-cmd^="degrade"], #analysts li[data-analyst="${target}"] button[data-cmd="heal"]`);
   if (btn) {
     btn.dataset.cmd = degraded.has(target) ? "heal" : "degrade";
@@ -427,12 +515,73 @@ function onRiskInput() {
   Music.setRisk(value);
 }
 
+/** Replay speeds the faster/slower buttons step through (multiples of normal). */
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+
+/** Index into SPEEDS, and whether the replay is paused from the header button. */
+let speedIndex = 2;
+let paused = false;
+
+/**
+ * Show the pause button's state (Pause when playing, Play when paused).
+ * @returns {void}
+ */
+function showPaused() {
+  const btn = document.getElementById("playpause");
+  const label = ended !== null ? "Replay again" : paused ? "Play" : "Pause";
+  btn.textContent = label;
+  btn.setAttribute("aria-label", label);
+}
+
+/**
+ * Pause or resume the replay (the tape, or the mock when there is no relay).
+ * After the end it starts the replay again.
+ * @returns {Promise<void>}
+ */
+async function togglePause() {
+  if (ended !== null) {
+    await replayAgain();
+    return;
+  }
+  paused = !paused;
+  showPaused();
+  const ok = await Feed.sendControl(paused ? "pause" : "play", "tape");
+  if (!ok) addLog("could not reach the relay to pause or play");
+}
+
+/**
+ * Step the replay speed up or down and tell the tape.
+ * @param {number} step +1 for faster, -1 for slower.
+ * @returns {Promise<void>}
+ */
+async function changeSpeed(step) {
+  const next = Math.min(SPEEDS.length - 1, Math.max(0, speedIndex + step));
+  if (next === speedIndex) return;
+  speedIndex = next;
+  document.getElementById("speed-readout").textContent = `${SPEEDS[speedIndex]}×`;
+  const ok = await Feed.sendControl("speed", "tape", { speed: SPEEDS[speedIndex] });
+  if (!ok) addLog("could not reach the relay to change speed");
+}
+
+/**
+ * Push the volume slider to the sound engine.
+ * @returns {void}
+ */
+function onVolumeInput() {
+  Music.setVolume(parseFloat(document.getElementById("volume").value));
+}
+
 /**
  * Wire up the page once the DOM is ready.
  * @returns {void}
  */
 function init() {
   document.getElementById("start-audio").addEventListener("click", startAudio);
+  document.getElementById("playpause").addEventListener("click", togglePause);
+  document.getElementById("slower").addEventListener("click", () => changeSpeed(-1));
+  document.getElementById("faster").addEventListener("click", () => changeSpeed(1));
+  document.getElementById("volume").addEventListener("input", onVolumeInput);
+  onVolumeInput();
   document.getElementById("unison").addEventListener("input", onUnisonInput);
   document.getElementById("risk").addEventListener("input", onRiskInput);
   for (const box of document.querySelectorAll("#voices input[data-voice]")) {
@@ -445,11 +594,18 @@ function init() {
   buildAnalysts();
   labelVoices();
   Score.init(document.getElementById("score"), document.getElementById("score-info"));
+  document.getElementById("ended-again").addEventListener("click", replayAgain);
+  document.getElementById("ended-pick").addEventListener("click", () => {
+    document.getElementById("canary-chart").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   Card.init(Feed.sendDecision, (isOpen) => {
-    Music.setDuck(isOpen);
+    cardOpen = isOpen;
+    updateDuck();
     if (isOpen) Music.sting();
-    // No pause/play from here: the relay pauses the tape when a card opens and
-    // presses play after the decision; the mock holds on the card's day itself.
+    // The relay pauses the tape when a card opens and presses play after the
+    // decision; the mock holds on the card's day itself. Keep the button honest.
+    paused = isOpen;
+    showPaused();
   });
   document.addEventListener("keydown", onKey);
   setInterval(refreshPanel, 250);

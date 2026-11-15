@@ -45,7 +45,17 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT / "web"
 DECISIONS_FILE = ROOT / "data" / "decisions.jsonl"
 
-CONTROL_COMMANDS = ("play", "pause", "restart", "kill", "degrade", "heal", "revive")
+CONTROL_COMMANDS = (
+    "play",
+    "pause",
+    "restart",
+    "kill",
+    "degrade",
+    "heal",
+    "revive",
+    "speed",
+)
+SPEED_RANGE = (0.25, 8.0)  # replay speed as a multiple of normal
 VERDICTS = ("approve", "veto")
 KEEPALIVE_SECONDS = 15.0
 HISTORY_LIMIT = 1000  # the longest replay (2008) is 126 ticks
@@ -211,8 +221,11 @@ class Relay:
         """
         with self.lock:
             card = self.cards.see(msg, time.monotonic(), time.time())
-            if msg.get("type") in ("view", "hb") and "agent" in msg:
+            if msg.get("type") in ("view", "hb", "end") and "agent" in msg:
                 self.latest[(str(msg["type"]), str(msg["agent"]))] = msg
+            if msg.get("type") == "tick":
+                # A new day means the replay is running again: forget the end.
+                self.latest.pop(("end", "tape"), None)
             self.remember(msg, card)
         self.broadcast(msg)
         if card is not None:
@@ -237,7 +250,7 @@ class Relay:
             if msg.get("i") == 0:
                 self.history.clear()
             self.history.append(msg)
-        elif kind == "decision":
+        elif kind in ("decision", "end"):
             self.history.append(msg)
         if card is not None:
             self.history.append(card)
@@ -312,6 +325,15 @@ class Relay:
                     f"replay only goes with restart, one of {sorted(REPLAYS)}"
                 )
             msg["replay"] = replay
+        if cmd == "speed":
+            speed = body.get("speed")
+            if (
+                isinstance(speed, bool)
+                or not isinstance(speed, (int, float))
+                or not SPEED_RANGE[0] <= speed <= SPEED_RANGE[1]
+            ):
+                raise DecisionError(f"speed must be a number in {SPEED_RANGE}")
+            msg["speed"] = float(speed)
         self.bus.send(msg)
         return msg
 

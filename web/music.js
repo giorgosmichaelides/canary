@@ -139,6 +139,12 @@ const Music = (() => {
   const MASTER_DB = -6;
   const DUCK_DB = -20;
 
+  /** Volume slider position (0..1) that gives exactly MASTER_DB; above it adds up to ~2.5 dB. */
+  const VOLUME_NORMAL = 0.75;
+
+  /** Volume slider position, kept so it applies even before audio starts. */
+  let volume = VOLUME_NORMAL;
+
   /** True while the music is ducked under the approval card. */
   let ducked = false;
 
@@ -575,7 +581,7 @@ const Music = (() => {
    */
   function build() {
     // Master safety: headroom plus a limiter so stacked voices cannot clip the output.
-    Tone.Destination.volume.value = MASTER_DB;
+    applyVolume();
     Tone.Destination.chain(new Tone.Limiter(-3));
 
     // Music bus (ducks under the card) and the reverb that untrusted voices drift into.
@@ -862,8 +868,30 @@ const Music = (() => {
     holdUntil = Math.max(holdUntil, performance.now() + seconds * 1000);
   }
 
+  /**
+   * Push the volume setting to the master output (everything, including stings
+   * and the Geiger ticks, goes through it). Zero mutes.
+   * @returns {void}
+   */
+  function applyVolume() {
+    if (typeof Tone === "undefined") return;
+    Tone.Destination.mute = volume <= 0;
+    Tone.Destination.volume.value = volume <= 0 ? MASTER_DB : MASTER_DB + 20 * Math.log10(volume / VOLUME_NORMAL);
+  }
+
+  /**
+   * Set the master volume. Safe to call before start().
+   * @param {number} value Slider position, 0 (mute) to 1; 0.75 is the original level.
+   * @returns {void}
+   */
+  function setVolume(value) {
+    if (!Number.isFinite(value)) return;
+    volume = Math.min(1, Math.max(0, value));
+    if (built) applyVolume();
+  }
+
   return {
     start, setUnison, setRisk, setViews, setRebound, getSmoothed, getTrust, getTempo,
-    sting, decision, hold, setMute, setRiskMute, setDuck,
+    sting, decision, hold, setMute, setRiskMute, setDuck, setVolume,
   };
 })();

@@ -58,7 +58,7 @@
    * @returns {object} State.
    */
   function freshState(replay) {
-    return { replay, synthetic: false, base: null, days: [], byDate: {}, card: null, hover: null };
+    return { replay, synthetic: false, base: null, days: [], byDate: {}, card: null, hover: null, ended: false };
   }
 
   // ---------------------------------------------------------------- DOM
@@ -84,12 +84,15 @@
     .cc table { border-collapse: collapse; margin-top: 4px; font-variant-numeric: tabular-nums; }
     .cc th, .cc td { padding: 2px 10px 2px 0; text-align: right; }
     .cc th:first-child, .cc td:first-child, .cc td:last-child { text-align: left; }
-    .cc .picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
-    .cc .picker button { font: inherit; font-size: 12px; color: ${C.ink2}; background: transparent; cursor: pointer;
-      border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 3px 10px; }
-    .cc .picker button[aria-pressed="true"] { color: ${C.ink}; border-color: ${C.ink2}; background: rgba(255,255,255,0.08); }
-    .cc .picker button:disabled { opacity: .5; cursor: default; }
-    .cc .picker .blind { border-color: ${C.unison}; color: ${C.ink}; }
+    .cc .pick-label { font-size: 13px; font-weight: 600; color: ${C.ink}; margin: 10px 0 6px; }
+    .cc .picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+    .cc .picker button { font: inherit; font-size: 14px; font-weight: 600; color: ${C.ink}; background: #211f1c; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.28); border-radius: 6px; padding: 8px 14px; transition: border-color .15s, background .15s; }
+    .cc .picker button:hover:not(:disabled) { border-color: #f5c542; background: #2a2720; }
+    .cc .picker button[aria-pressed="true"] { color: #1d1700; background: #f5c542; border-color: #f5c542; }
+    .cc .picker button[aria-pressed="true"]::before { content: "\\25B6  "; }
+    .cc .picker button:disabled { opacity: .45; cursor: default; }
+    .cc .picker .blind { border-color: ${C.unison}; color: ${C.ink}; background: transparent; font-size: 13px; padding: 6px 12px; }
     .blindfold { position: fixed; inset: 0; z-index: 50; background: #0c0b0a; color: ${C.ink};
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
       font: 16px system-ui, -apple-system, "Segoe UI", sans-serif; text-align: center; padding: 16px; }
@@ -186,7 +189,9 @@
     pickButtons[name] = button;
     picker.append(button);
   }
-  picker.hidden = !location.protocol.startsWith("http");
+  const pickLabel = el("p", "Replay a crisis (restarts the desk on that period):");
+  pickLabel.className = "pick-label";
+  pickLabel.hidden = picker.hidden = !location.protocol.startsWith("http");
 
   // Blind test: hide the screen, keep the music, let the judges guess by ear.
   const blindButton = el("button", "Blind test: calm or crash?");
@@ -203,7 +208,7 @@
   blind.setAttribute("aria-modal", "true");
   blind.setAttribute("aria-label", "Blind test");
   document.body.append(blind);
-  root.append(title, sub, picker, blindRow, wrap, details, heat, report);
+  root.append(title, sub, pickLabel, picker, blindRow, wrap, details, heat, report);
 
   /** Black out the screen and ask the room to guess. @returns {void} */
   function startBlind() {
@@ -266,6 +271,12 @@
    * @returns {Promise<void>}
    */
   async function pickCrisis(name) {
+    // Recorded replay (no relay): only 2020 was recorded, so only that can restart.
+    if (typeof Feed !== "undefined" && Feed.mode === "mock") {
+      if (name === "2020") Feed.sendControl("restart", "tape");
+      else sub.textContent = `Offline mode only has the 2020 recording. Run python -m canary.run to replay ${name}.`;
+      return;
+    }
     for (const b of Object.values(pickButtons)) b.disabled = true;
     try {
       const res = await fetch("/control", {
@@ -311,7 +322,10 @@
     else if (msg.type === "view") onView(msg);
     else if (msg.type === "card" && msg.card) onCard(msg.card);
     else if (msg.type === "decision") onDecision(msg);
-    else return;
+    else if (msg.type === "end") {
+      if (msg.replay !== undefined && String(msg.replay) !== state.replay) return;
+      state.ended = true;
+    } else return;
     scheduleDraw();
   }
 
@@ -768,7 +782,7 @@
   function reportLines() {
     const days = state.days.filter(Boolean);
     const total = REPLAY_DAYS[state.replay];
-    if (!total || days.length < total) return [];
+    if (!state.ended && (!total || days.length < total)) return [];
     const lines = [];
     const card = state.card;
     const start = card && state.byDate[card.date];
@@ -836,7 +850,8 @@
     const fake = state.synthetic ? "SYNTHETIC DATA · " : "";
     const cut = cutValue(last);
     const impact = cut === null ? "" : ` Cut vs no action today: ${cut - last.hold >= 0 ? "+" : ""}${(cut - last.hold).toFixed(1)} points.`;
-    sub.textContent = `${fake}Replay ${state.replay}: values = 100 on ${shortDate(state.base.date)}; now ${shortDate(last.date)}. Shaded: rebound days.${impact}`;
+    const when = state.ended ? `ENDED on ${shortDate(last.date)}` : `now ${shortDate(last.date)}`;
+    sub.textContent = `${fake}Replay ${state.replay}: values = 100 on ${shortDate(state.base.date)}; ${when}. Shaded: rebound days.${impact}`;
     renderReport();
     if (!details.open) return;
     table.replaceChildren();

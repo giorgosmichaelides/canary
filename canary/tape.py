@@ -118,6 +118,8 @@ class Tape:
         self.bus = bus
         self.replay = replay
         self.interval = interval
+        self.base_interval = interval  # seconds per day at normal speed
+        self.speed_changed = False
         self.dates, self.prices, self.synthetic = load_tape(replay)
         self.days = replay_days(self.dates, replay)
         self.playing = not paused
@@ -164,7 +166,12 @@ class Tape:
         ):
             return
         cmd = msg.get("cmd")
-        if cmd == "play" and not self.playing:
+        if cmd == "play" and self.position >= len(self.days):
+            # Play after the end starts the replay again instead of doing nothing.
+            self.position = 0
+            self.playing = True
+            self.log(f"restart {self.replay.name}: {len(self.days)} days")
+        elif cmd == "play" and not self.playing:
             self.playing = True
             self.log("play")
         elif cmd == "pause" and self.playing:
@@ -179,6 +186,27 @@ class Tape:
             self.position = 0
             self.playing = True
             self.log(f"restart {self.replay.name}: {len(self.days)} days")
+        elif cmd == "speed":
+            speed = msg.get("speed")
+            if isinstance(speed, (int, float)) and not isinstance(speed, bool):
+                if 0.25 <= speed <= 8.0:
+                    self.interval = self.base_interval / float(speed)
+                    self.speed_changed = True
+                    self.log(f"speed x{speed:g}")
+
+    def end_message(self) -> dict[str, Any]:
+        """The message sent once after the last day, so the page can say the replay ended.
+
+        Returns:
+            {"type": "end", "agent": "tape", "replay", "days", "last_date"}.
+        """
+        return {
+            "type": "end",
+            "agent": "tape",
+            "replay": self.replay.name,
+            "days": len(self.days),
+            "last_date": self.dates[self.days[-1]] if self.days else None,
+        }
 
     def run(self) -> None:
         """Send ticks on time while listening for controls. Runs until Ctrl-C."""
@@ -195,6 +223,10 @@ class Tape:
                 msg = self.bus.recv(timeout=wait)
                 if msg is not None:
                     self.handle(msg)
+                if self.speed_changed:
+                    # Don't wait out a long old interval after speeding up.
+                    self.speed_changed = False
+                    next_tick = min(next_tick, time.monotonic() + self.interval)
                 continue
 
             if self.position < len(self.days):
@@ -205,6 +237,7 @@ class Tape:
                 if self.position == len(self.days):
                     self.log("replay finished")
                     self.playing = False
+                    self.bus.send(self.end_message())
 
             # Step from the planned time so ticks don't drift, but after a pause
             # start fresh instead of firing a burst of ticks to catch up.
