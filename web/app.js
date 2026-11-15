@@ -30,6 +30,9 @@ const covering = {};
 const isolated = {};
 const degraded = new Set();
 
+/** Each analyst's status at the last refresh, to play a cue when one goes down or comes back. */
+const lastStatus = {};
+
 /** The last tick seen ({replay, i}), to notice a restart or a new crisis. */
 let lastTick = null;
 
@@ -456,6 +459,10 @@ function refreshPanel() {
   for (const name of ANALYSTS) {
     const li = document.querySelector(`#analysts li[data-analyst="${name}"]`);
     const st = statusOf(name);
+    const before = lastStatus[name];
+    lastStatus[name] = st;
+    if (before && before !== "waiting" && before !== "down" && st === "down") Music.analystDown(name);
+    if (before === "down" && st !== "down" && st !== "waiting") Music.analystBack(name);
     if (st !== "waiting") known += 1;
     if (st !== "waiting" && st !== "down") up += 1;
     const chip = li.querySelector(".status");
