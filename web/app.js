@@ -100,6 +100,9 @@ async function startAudio() {
   setStatus("Audio running.");
   document.body.classList.add("started");
   Feed.startMock();
+  // The tape waits on day one until someone starts the desk. Not while a card is
+  // open, though: the relay paused the tape for it and plays again after the decision.
+  if (!Card.isOpen) Feed.sendControl("play", "tape");
 }
 
 /**
