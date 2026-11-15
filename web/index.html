@@ -234,7 +234,7 @@
     #status { font-size: 14px; color: var(--muted); }
     @media (max-width: 520px) { .intro-box dl div { grid-template-columns: 1fr; gap: 2px; } }
 
-    /* Approval card */
+    /* Recommendation card */
     #card[hidden] { display: none; }
     #card { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px;
             background: rgba(10,9,8,.82); animation: fade .2s ease; }
@@ -313,7 +313,7 @@
       <dl>
         <div><dt>Four parts</dt><dd>When the analysts disagree, you hear four different lines.</dd></div>
         <div><dt>One note</dt><dd>When every currency moves together, the parts lock onto the same note.</dd></div>
-        <div><dt>One person</dt><dd>When risk crosses 0.50, the code proposes a trade and a named person approves or vetoes it.</dd></div>
+        <div><dt>One person</dt><dd>When risk crosses 0.50, the code recommends a trade and a named person accepts or dismisses it.</dd></div>
       </dl>
       <div class="intro-actions">
         <button id="start-audio" type="button">Start the desk</button>
@@ -512,14 +512,14 @@
           <label class="field" for="card-name"><span>Your name</span>
             <input id="card-name" type="text" placeholder="e.g. Ana Smith" autocomplete="name">
           </label>
-          <label class="field" for="card-reason"><span>Reason <span class="opt">(needed if you veto)</span></span>
+          <label class="field" for="card-reason"><span>Reason <span class="opt">(needed if you dismiss)</span></span>
             <input id="card-reason" type="text" placeholder="e.g. one bad week isn't a trend">
           </label>
         </div>
         <p id="card-error" role="alert"></p>
         <div class="buttons">
-          <button id="card-approve" type="button">Approve the cut</button>
-          <button id="card-veto" type="button">Veto, keep the position</button>
+          <button id="card-approve" type="button">Accept</button>
+          <button id="card-veto" type="button">Dismiss</button>
         </div>
         <p class="note">Either way, your name, choice and reason go in the decision log, and the replay carries on.</p>
       </section>

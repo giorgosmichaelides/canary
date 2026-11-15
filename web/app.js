@@ -1,6 +1,6 @@
 /**
  * Canary: browser entry point. Wires the feed (relay or recording) to the
- * sound engine, the score, the side panel and the approval card. The page
+ * sound engine, the score, the side panel and the recommendation card. The page
  * never decides anything: it displays views and forwards human decisions.
  */
 
@@ -41,11 +41,12 @@ let ended = null;
 let cardOpen = false;
 
 /**
- * Duck the music while a card waits or after the replay has ended.
+ * Duck the music after the replay has ended. A card doesn't duck it: the card
+ * pings once (Music.sting) and the song carries on as it was.
  * @returns {void}
  */
 function updateDuck() {
-  Music.setDuck(cardOpen || ended !== null);
+  Music.setDuck(ended !== null);
 }
 
 /**
@@ -304,7 +305,8 @@ function logDecision(d) {
   li.className = d.verdict === "approve" ? "approve" : "veto";
   const name = d.by || d.decided_by; // the relay records the judge's name as "by"
   const who = name ? ` by ${name}` : "";
-  li.textContent = `${d.market_date}: ${d.verdict} "${d.action}"${who} in ${d.seconds_to_decide}s${d.reason ? ` (${d.reason})` : ""}`;
+  const shown = d.verdict === "approve" ? "accepted" : "dismissed"; // relay verdicts stay "approve" / "veto"
+  li.textContent = `${d.market_date}: ${shown} "${d.action}"${who} in ${d.seconds_to_decide}s${d.reason ? ` (${d.reason})` : ""}`;
   document.getElementById("decisions").prepend(li);
 }
 

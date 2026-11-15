@@ -592,11 +592,16 @@ const Music = (() => {
     trustReverb = new Tone.Reverb({ decay: 6, wet: 1 }).connect(musicBus);
 
     // Event sounds go straight to the output, so they cut through the duck.
-    stingSynth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "sawtooth" },
-      envelope: { attack: 0.005, decay: 1.2, sustain: 0.25, release: 1.5 },
-    }).connect(new Tone.Filter(3200, "lowpass").toDestination());
-    stingSynth.volume.value = -14;
+    // Card ping: one clear bell-like tone (sine FM), loud but short, then it rings away.
+    stingSynth = new Tone.FMSynth({
+      harmonicity: 3.01,
+      modulationIndex: 6,
+      oscillator: { type: "sine" },
+      modulation: { type: "sine" },
+      envelope: { attack: 0.002, decay: 1.6, sustain: 0, release: 1.2 },
+      modulationEnvelope: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.2 },
+    }).toDestination();
+    stingSynth.volume.value = 6; // the master limiter (-3 dB) keeps it from clipping
     chordSynth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "triangle" },
       envelope: { attack: 0.04, decay: 0.6, sustain: 0.6, release: 2.5 },
@@ -762,13 +767,13 @@ const Music = (() => {
   }
 
   /**
-   * Escalation sting: cluster C, D flat, F sharp, G over low D. Plays at once (not
-   * on the bar) and is not ducked.
+   * Card ping: a single loud bell tone on D6 (in the scale, so it sits on the
+   * music). Plays at once (not on the bar); the music carries on underneath.
    * @returns {void}
    */
   function sting() {
     if (!built) return;
-    stingSynth.triggerAttackRelease(toFreqs([38, 60, 61, 66, 67]), "2n", Tone.now() + 0.05, 0.9);
+    stingSynth.triggerAttackRelease(Tone.Frequency(86, "midi").toFrequency(), "8n", Tone.now() + 0.05, 1);
   }
 
   /**

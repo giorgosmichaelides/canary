@@ -225,6 +225,21 @@ const Score = (() => {
     ctx.font = "10px system-ui, sans-serif";
     ctx.fillText("0.50", LABEL_W - 34, halfY);
 
+    // The re-arm level (canary.views.REARM_BELOW): after a card, risk must drop
+    // below 0.30 before another can open. Kept very faint so 0.50 stays the headline.
+    const rearmY = riskBase - 0.3 * (RISK_H - 10);
+    ctx.save();
+    ctx.setLineDash([1, 4]);
+    ctx.strokeStyle = "rgba(236,238,243,0.12)";
+    ctx.beginPath();
+    ctx.moveTo(LABEL_W - 8, rearmY);
+    ctx.lineTo(width - PAD, rearmY);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = "rgba(236,238,243,0.22)";
+    ctx.font = "9px system-ui, sans-serif";
+    ctx.fillText("0.30", LABEL_W - 34, rearmY);
+
     if (!shown.length) {
       ctx.fillStyle = INK.faint;
       ctx.font = "13px system-ui, sans-serif";

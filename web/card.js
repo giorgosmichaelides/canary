@@ -1,7 +1,8 @@
 /**
- * Canary: the approval card. Shows one card per escalation id, collects a
- * named human decision (Approve, or Veto with a reason) and hands it to the
- * caller. Never decides anything itself and never auto-approves.
+ * Canary: the recommendation card. Shows one card per escalation id, collects a
+ * named human decision (Accept, or Dismiss with a reason; sent to the relay as
+ * "approve" / "veto") and hands it to the caller. Never decides anything itself
+ * and never auto-accepts.
  *
  * Exposes a single global: `Card`.
  */
@@ -11,13 +12,6 @@ const Card = (() => {
 
   /** Chip wording per vote. */
   const VOTE_TEXT = { support: "For", neutral: "Unsure", dissent: "Against" };
-
-  /** What each slice holds (canary.views.SLICES), to say in words what a cut sells. */
-  const HOLDINGS = {
-    fx: "the euro and the pound",
-    havens: "the yen and the Swiss franc",
-    commodity: "the Australian dollar, Canadian dollar and Norwegian krone",
-  };
 
   /** Ids already decided (here or elsewhere); a repeat of these never reopens the card. */
   const decided = new Set();
@@ -124,21 +118,6 @@ const Card = (() => {
   }
 
   /**
-   * The proposal as a question and one sentence on what it would do.
-   * @param {Object} escalation Escalation with `action`, `slice` and `cut`.
-   * @returns {{question: string, explain: string}} Text for the card's heading.
-   */
-  function askText(escalation) {
-    const pct = Math.round((escalation.cut || 0) * 100);
-    const what = HOLDINGS[escalation.slice];
-    if (!pct || !what) return { question: `${escalation.action}?`, explain: "" };
-    return {
-      question: `Sell ${pct}% of the ${escalation.slice} holding?`,
-      explain: `That means selling ${pct}% of what the desk holds in ${what}, to lose less if the crash carries on. The rest stays as it is.`,
-    };
-  }
-
-  /**
    * The reasons behind the risk score, in plain words.
    * @param {Object} escalation Escalation; `why` holds divergence, unison and drawdown.
    * @returns {string[]} One sentence per reason.
@@ -190,9 +169,8 @@ const Card = (() => {
     }
     open = escalation;
     openedAt = performance.now();
-    const ask = askText(escalation);
-    el("card-action").textContent = ask.question;
-    el("card-explain").textContent = ask.explain;
+    el("card-action").textContent = "RECOMMENDATION";
+    el("card-explain").textContent = `Risk is high. Recommended: ${escalation.action}`;
     el("card-date").textContent = niceDate(escalation.date);
     el("card-risk").textContent = escalation.risk.toFixed(2);
     el("card-risk-fill").style.width = `${Math.round(Math.min(1, escalation.risk) * 100)}%`;
@@ -205,8 +183,8 @@ const Card = (() => {
     );
     el("card-rule").textContent = `Rule: ${escalation.rule}. Proposed action: ${escalation.action}.`;
     el("card-numbers").textContent = workingText(escalation);
-    el("card-approve").textContent = escalation.cut ? "Approve the sale" : "Approve";
-    el("card-veto").textContent = escalation.cut ? "Veto, keep everything" : "Veto";
+    el("card-approve").textContent = "Accept";
+    el("card-veto").textContent = "Dismiss";
     renderVotes(escalation.votes, views);
     el("card-reason").value = "";
     el("card-error").textContent = "";
@@ -258,7 +236,7 @@ const Card = (() => {
       return;
     }
     if (verdict === "veto" && !reason) {
-      error.textContent = "Say why you are vetoing, in a few words.";
+      error.textContent = "Say why you are dismissing it, in a few words.";
       el("card-reason").focus();
       return;
     }
