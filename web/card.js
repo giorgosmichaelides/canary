@@ -10,7 +10,14 @@ const Card = (() => {
   const NAMES = { fx: "FX", havens: "Havens", commodity: "Commodity", contrarian: "Contrarian" };
 
   /** Chip wording per vote. */
-  const VOTE_TEXT = { support: "Support", neutral: "Neutral", dissent: "Dissent" };
+  const VOTE_TEXT = { support: "For", neutral: "Unsure", dissent: "Against" };
+
+  /** What each slice holds (canary.views.SLICES), to say in words what a cut sells. */
+  const HOLDINGS = {
+    fx: "the euro and the pound",
+    havens: "the yen and the Swiss franc",
+    commodity: "the Australian dollar, Canadian dollar and Norwegian krone",
+  };
 
   /** Ids already decided (here or elsewhere); a repeat of these never reopens the card. */
   const decided = new Set();
@@ -99,6 +106,56 @@ const Card = (() => {
       row.append(chip, who, line);
       list.append(row);
     }
+    const count = (kind) => votes.filter((v) => v.vote === kind).length;
+    const unsure = count("neutral");
+    el("card-tally").textContent =
+      `${count("support")} for, ${count("dissent")} against` + (unsure ? `, ${unsure} unsure` : "");
+  }
+
+  /**
+   * Format a market date for people, e.g. "Mon 2 Mar 2020".
+   * @param {string} iso "YYYY-MM-DD".
+   * @returns {string} Readable date.
+   */
+  function niceDate(iso) {
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  }
+
+  /**
+   * The proposal as a question and one sentence on what it would do.
+   * @param {Object} escalation Escalation with `action`, `slice` and `cut`.
+   * @returns {{question: string, explain: string}} Text for the card's heading.
+   */
+  function askText(escalation) {
+    const pct = Math.round((escalation.cut || 0) * 100);
+    const what = HOLDINGS[escalation.slice];
+    if (!pct || !what) return { question: `${escalation.action}?`, explain: "" };
+    return {
+      question: `Sell ${pct}% of the ${escalation.slice} holding?`,
+      explain: `That means selling ${pct}% of what the desk holds in ${what}, to lose less if the crash carries on. The rest stays as it is.`,
+    };
+  }
+
+  /**
+   * The reasons behind the risk score, in plain words.
+   * @param {Object} escalation Escalation; `why` holds divergence, unison and drawdown.
+   * @returns {string[]} One sentence per reason.
+   */
+  function whyLines(escalation) {
+    const why = escalation.why;
+    const days = /for (\d+) days/.exec(escalation.rule || "");
+    const lines = [days ? `Risk has been over the limit for ${days[1]} trading days in a row.` : "Risk is over the limit."];
+    if (!why) return lines;
+    if (why.divergence >= why.unison) {
+      lines.push(`The analysts disagree sharply about where things are heading (divergence ${why.divergence.toFixed(2)}).`);
+    } else {
+      lines.push(`Currencies are moving together against the dollar (unison ${why.unison.toFixed(2)}).`);
+    }
+    const fall = -why.drawdown * 100;
+    if (fall > 0.05) lines.push(`Commodity currencies, usually the first to fall in a panic, are ${fall.toFixed(1)}% below their peak.`);
+    return lines;
   }
 
   /**
@@ -133,17 +190,31 @@ const Card = (() => {
     }
     open = escalation;
     openedAt = performance.now();
-    el("card-action").textContent = escalation.action;
-    el("card-rule").textContent = `${escalation.rule} (market date ${escalation.date})`;
+    const ask = askText(escalation);
+    el("card-action").textContent = ask.question;
+    el("card-explain").textContent = ask.explain;
+    el("card-date").textContent = niceDate(escalation.date);
+    el("card-risk").textContent = escalation.risk.toFixed(2);
+    el("card-risk-fill").style.width = `${Math.round(Math.min(1, escalation.risk) * 100)}%`;
+    el("card-why").replaceChildren(
+      ...whyLines(escalation).map((text) => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        return li;
+      }),
+    );
+    el("card-rule").textContent = `Rule: ${escalation.rule}. Proposed action: ${escalation.action}.`;
     el("card-numbers").textContent = workingText(escalation);
+    el("card-approve").textContent = escalation.cut ? "Approve the sale" : "Approve";
+    el("card-veto").textContent = escalation.cut ? "Veto, keep everything" : "Veto";
     renderVotes(escalation.votes, views);
     el("card-reason").value = "";
     el("card-error").textContent = "";
-    el("card-open-for").textContent = "open for 0s";
+    el("card-open-for").textContent = "waiting 0s";
     el("card").hidden = false;
     clearInterval(timer);
     timer = setInterval(() => {
-      el("card-open-for").textContent = `open for ${Math.round((performance.now() - openedAt) / 1000)}s`;
+      el("card-open-for").textContent = `waiting ${Math.round((performance.now() - openedAt) / 1000)}s`;
     }, 500);
     // Focus the panel, not a text field, so the presenter's K / R keys still work while a judge reads.
     document.querySelector("#card .panel").focus();
@@ -182,12 +253,12 @@ const Card = (() => {
     const reason = el("card-reason").value.trim();
     const error = el("card-error");
     if (!name) {
-      error.textContent = "Enter your name: a named person decides.";
+      error.textContent = "Add your name first. Every decision is signed by a person.";
       el("card-name").focus();
       return;
     }
     if (verdict === "veto" && !reason) {
-      error.textContent = "A veto needs a reason.";
+      error.textContent = "Say why you are vetoing, in a few words.";
       el("card-reason").focus();
       return;
     }

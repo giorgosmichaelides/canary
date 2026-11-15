@@ -117,8 +117,8 @@ const Score = (() => {
   }
 
   /** Palette for the canvas (matches the page's CSS variables). */
-  const INK = { text: "#eceef3", muted: "#8b92a3", faint: "#5d6476", band: "rgba(255,255,255,0.025)", grid: "#222736",
-                red: "#ff6b61", green: "#4cd18a", amber: "#ffb347", canary: "rgba(255,204,51,0.10)", calm: "#3a4256" };
+  const INK = { text: "#efeae0", muted: "#aaa498", faint: "#7d786d", band: "rgba(255,255,255,0.025)", grid: "#2e2b27",
+                red: "#ef6f5e", green: "#6cc58f", amber: "#ffb347", canary: "rgba(245,197,66,0.10)", calm: "#45413a" };
 
   /**
    * Draw a dashed vertical marker with a small label at the top.
@@ -145,7 +145,7 @@ const Score = (() => {
     const w = ctx.measureText(label).width + 10;
     const want = align === "right" ? x - w - 2 : align === "left" ? x + 2 : x - w / 2;
     const left = Math.max(2, Math.min(want, canvas.clientWidth - w - 2));
-    ctx.fillStyle = "#10131a";
+    ctx.fillStyle = "#191815";
     ctx.strokeStyle = colour;
     ctx.lineWidth = 1;
     ctx.beginPath();

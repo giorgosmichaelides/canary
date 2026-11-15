@@ -26,9 +26,9 @@
   const CRISES = [["2008", "2008 · Lehman"], ["2020", "2020 · COVID"], ["2022", "2022 · Dollar spike"], ["2024", "2024 · Yen unwind"], ["now", "Now · Jul–Nov 2026"]];
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  /** Colours by role (dark page). Series pair validated on #0b0d12 with the dataviz validator. */
+  /** Colours by role (dark page). Series pair validated on a near-black surface with the dataviz validator. */
   const C = {
-    surface: "#0b0d12",
+    surface: "#191815",
     ink: "#f0efec",
     ink2: "#c3c2b7",
     muted: "#898781",
@@ -74,7 +74,7 @@
     .cc .wrap { position: relative; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .cc canvas { display: block; width: 100%; border-radius: 8px; outline: none; }
     .cc canvas:focus-visible { box-shadow: 0 0 0 2px ${C.price}; }
-    .cc .tip { position: absolute; pointer-events: none; background: #16181f; border: 1px solid rgba(255,255,255,0.12);
+    .cc .tip { position: absolute; pointer-events: none; background: #211f1c; border: 1px solid rgba(255,255,255,0.12);
                border-radius: 6px; padding: 6px 8px; min-width: 150px; display: none; font-variant-numeric: tabular-nums; }
     .cc .tip .d { color: ${C.muted}; margin-bottom: 4px; }
     .cc .tip .r { display: flex; align-items: center; gap: 6px; }
@@ -90,7 +90,7 @@
     .cc .picker button[aria-pressed="true"] { color: ${C.ink}; border-color: ${C.ink2}; background: rgba(255,255,255,0.08); }
     .cc .picker button:disabled { opacity: .5; cursor: default; }
     .cc .picker .blind { border-color: ${C.unison}; color: ${C.ink}; }
-    .blindfold { position: fixed; inset: 0; z-index: 50; background: #050608; color: ${C.ink};
+    .blindfold { position: fixed; inset: 0; z-index: 50; background: #0c0b0a; color: ${C.ink};
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
       font: 16px system-ui, -apple-system, "Segoe UI", sans-serif; text-align: center; padding: 16px; }
     .blindfold[hidden] { display: none; }
@@ -98,7 +98,7 @@
     .blindfold p { margin: 0; color: ${C.ink2}; max-width: 34em; }
     .blindfold .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
     .blindfold button { font: inherit; font-size: 20px; padding: 12px 28px; border-radius: 10px; cursor: pointer;
-      color: ${C.ink}; background: #14171f; border: 1px solid rgba(255,255,255,0.25); }
+      color: ${C.ink}; background: #211f1c; border: 1px solid rgba(255,255,255,0.25); }
     .blindfold .answer { font-size: clamp(22px, 4vw, 36px); color: ${C.ink}; }
     .cc .heat { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; }
     .cc .heat h3 { margin: 0 0 2px; font-size: 14px; color: ${C.ink}; }

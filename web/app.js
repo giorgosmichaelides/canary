@@ -7,13 +7,8 @@
 /** The four analysts, in display order (also the takeover ring order). */
 const ANALYSTS = ["fx", "havens", "commodity", "contrarian"];
 
-/** Instrument names per style, for the mute labels. */
-const VOICE_LABELS = {
-  default: { fx: "fx (walking bass)", havens: "havens (pad)", commodity: "commodity (rock)", contrarian: "contrarian (bell pluck)" },
-  classical: { fx: "fx (cello)", havens: "havens (violins)", commodity: "commodity (piano)", contrarian: "contrarian (pizzicato)" },
-  metal: { fx: "fx (bass + double kick)", havens: "havens (choir)", commodity: "commodity (rhythm guitar + snare)", contrarian: "contrarian (lead guitar)" },
-  phonk: { fx: "fx (808 + kick)", havens: "havens (tape pad)", commodity: "commodity (cowbell + clap)", contrarian: "contrarian (lead + hats)" },
-};
+/** Instrument names, for the mute labels. */
+const VOICE_LABELS = { fx: "fx (808 + kick)", havens: "havens (tape pad)", commodity: "commodity (cowbell + clap)", contrarian: "contrarian (lead + hats)" };
 
 /** Seconds without a heartbeat (or a view) before an analyst counts as down (DESIGN.md: 3.0 s). */
 const GONE_SECONDS = 3;
@@ -24,6 +19,7 @@ const book = {};
 /** Per analyst: last heard (performance.now() ms), slices it covers, and local degrade flag. */
 const heard = {};
 const covering = {};
+const isolated = {};
 const degraded = new Set();
 
 /** The last tick seen ({replay, i}), to notice a restart or a new crisis. */
@@ -219,6 +215,7 @@ function onMessage(msg) {
   } else if (msg.type === "hb") {
     markHeard(msg.agent);
     covering[msg.agent] = msg.covering || [];
+    isolated[msg.agent] = Boolean(msg.isolated);
   } else if (msg.type === "decision") {
     Card.decidedElsewhere(msg.id);
     logDecision(msg);
@@ -279,6 +276,10 @@ function buildAnalysts() {
     const label = document.createElement("span");
     label.className = "name";
     label.textContent = name;
+    const role = document.createElement("span");
+    role.className = "role";
+    role.dataset.role = name;
+    label.append(role);
     const status = document.createElement("span");
     status.className = "status live";
     status.textContent = "waiting";
@@ -289,6 +290,8 @@ function buildAnalysts() {
     const buttons = document.createElement("div");
     buttons.className = "buttons";
     for (const [cmd, text] of [["kill", "Kill"], ["degrade", "Degrade"], ["revive", "Revive"]]) {
+      // Only fx can be killed on stage: killing havens or commodity moves or loses the 2 Mar card.
+      if (cmd === "kill" && name !== "fx") continue;
       const b = document.createElement("button");
       b.type = "button";
       b.className = "small";
@@ -324,11 +327,12 @@ async function control(cmd, target) {
 /**
  * Work out an analyst's status from heartbeats, views and coverage.
  * @param {string} name Analyst name.
- * @returns {string} "waiting", "live", "covering", "degraded" or "down".
+ * @returns {string} "waiting", "live", "isolated", "covering", "degraded" or "down".
  */
 function statusOf(name) {
   if (heard[name] === undefined) return "waiting";
   if ((performance.now() - heard[name]) / 1000 > GONE_SECONDS) return "down";
+  if (isolated[name]) return "isolated";
   const covers = (covering[name] || []).length || ANALYSTS.some((s) => s !== name && book[s] && book[s].by === name);
   if (covers) return "covering";
   return degraded.has(name) ? "degraded" : "live";
@@ -339,24 +343,41 @@ function statusOf(name) {
  * @returns {void}
  */
 function refreshPanel() {
-  const meter = (id, frac, text) => {
+  const withUnit = (output, value, unit) => {
+    const small = document.createElement("small");
+    small.textContent = unit;
+    output.replaceChildren(value, small);
+  };
+  const meter = (id, frac, text, unit) => {
     const m = document.getElementById(id);
     m.querySelector(".fill").style.width = `${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%`;
-    m.querySelector("output").textContent = text;
+    const output = m.querySelector("output");
+    if (unit) withUnit(output, text, unit);
+    else output.textContent = text;
   };
   meter("m-unison", latest.unison, latest.unison.toFixed(2));
   meter("m-risk", latest.risk, latest.risk.toFixed(2));
+  document.getElementById("m-risk").classList.toggle("hot", latest.risk >= 0.5);
   const bpm = Music.getTempo();
-  meter("m-tempo", (bpm - 80) / 80, `${Math.round(bpm)} bpm`);
+  meter("m-tempo", (bpm - 80) / 80, String(Math.round(bpm)), "bpm");
   const trust = Music.getTrust();
+  let up = 0;
+  let known = 0;
   for (const name of ANALYSTS) {
     const li = document.querySelector(`#analysts li[data-analyst="${name}"]`);
     const st = statusOf(name);
+    if (st !== "waiting") known += 1;
+    if (st !== "waiting" && st !== "down") up += 1;
     const chip = li.querySelector(".status");
     chip.className = `status ${st}`;
-    chip.textContent = st;
+    const cov = covering[name] || [];
+    chip.textContent = st === "covering" && cov.length ? `covering ${cov.join(", ")}` : st;
     li.querySelector(".trust div").style.width = `${Math.round(trust[name] * 100)}%`;
   }
+  const alive = document.querySelector("#m-alive output");
+  if (known) withUnit(alive, String(up), `of ${ANALYSTS.length}`);
+  else alive.textContent = "–";
+  alive.classList.toggle("short", known > 0 && up < ANALYSTS.length);
 }
 
 /**
@@ -373,13 +394,16 @@ function onKey(event) {
 }
 
 /**
- * Relabel the mute checkboxes for the chosen style.
- * @param {string} style Style name.
+ * Label the mute checkboxes and the analysts' instrument lines.
  * @returns {void}
  */
-function labelVoices(style) {
+function labelVoices() {
   for (const span of document.querySelectorAll("#voices [data-label]")) {
-    span.textContent = VOICE_LABELS[style][span.dataset.label];
+    span.textContent = VOICE_LABELS[span.dataset.label];
+  }
+  for (const span of document.querySelectorAll("#analysts [data-role]")) {
+    const label = VOICE_LABELS[span.dataset.role];
+    span.textContent = (label.match(/\((.*)\)/) || [, label])[1];
   }
 }
 
@@ -414,17 +438,12 @@ function init() {
   for (const box of document.querySelectorAll("#voices input[data-voice]")) {
     box.addEventListener("change", () => Music.setMute(box.dataset.voice, box.checked));
   }
-  const style = document.getElementById("style");
-  style.addEventListener("change", () => {
-    Music.setStyle(style.value);
-    labelVoices(style.value);
-  });
-  labelVoices(style.value);
   const riskBox = document.getElementById("mute-risk");
   riskBox.addEventListener("change", () => Music.setRiskMute(riskBox.checked));
   onUnisonInput();
   onRiskInput();
   buildAnalysts();
+  labelVoices();
   Score.init(document.getElementById("score"), document.getElementById("score-info"));
   Card.init(Feed.sendDecision, (isOpen) => {
     Music.setDuck(isOpen);
