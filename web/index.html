@@ -184,6 +184,13 @@
     #analysts .buttons button[data-cmd="revive"]:hover { color: var(--green); border-color: rgba(108,197,143,.5); }
     .hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 
+    /* What you're hearing */
+    .hear { margin: 0; font-size: 14px; }
+    .hear div { padding: 7px 0; border-top: 1px solid var(--line); }
+    .hear div:first-child { border-top: 0; padding-top: 0; }
+    .hear dt { font-weight: 600; }
+    .hear dd { margin: 0; color: var(--muted); }
+
     /* Logs */
     #decisions, #desk-log { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; }
     #decisions li { position: relative; padding: 8px 0 8px 18px; font-size: 14px; border-top: 1px solid var(--line); }
@@ -433,6 +440,19 @@
             </dl>
             <p>Killing fx doesn't change the 2020 card. Killing havens or commodity does: the analyst that covers reads the slice its own way, so risk comes out different (havens: card on 28 Feb; commodity: no card).</p>
           </details>
+        </div>
+      </div>
+
+      <div class="panel-box">
+        <div class="head"><h2>What you're hearing</h2></div>
+        <div class="body">
+          <dl class="hear">
+            <div><dt>Ticking speeds up</dt><dd>Risk is rising.</dd></div>
+            <div><dt>Parts melt into one note</dt><dd>Currencies are moving together.</dd></div>
+            <div><dt>A falling whoosh</dt><dd>An analyst went down. A neighbour's instrument takes over its part.</dd></div>
+            <div><dt>A rising blip</dt><dd>That analyst is back.</dd></div>
+            <div><dt>A harsh chord</dt><dd>A card opened. The music waits for a person.</dd></div>
+          </dl>
         </div>
       </div>
 

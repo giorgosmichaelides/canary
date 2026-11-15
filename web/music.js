@@ -116,7 +116,7 @@ const Music = (() => {
   const GEIGER_MIN_RATE = 1;
   const GEIGER_MAX_RATE = 14;
   const GEIGER_MIN_DB = -34;
-  const GEIGER_MAX_DB = -8;
+  const GEIGER_MAX_DB = -16;
   /** Shortest gap between two ticks (s), so bursts stay audible as separate clicks. */
   const GEIGER_MIN_GAP = 0.012;
   /** How far ahead (s) ticks are scheduled, and how often (ms) the scheduler runs. */
@@ -154,6 +154,11 @@ const Music = (() => {
   /** Dread layers driven by risk, built in build(): tritone drone and brown-noise rumble. */
   let tritoneGain = null;
   let rumbleGain = null;
+
+  /** Cue sounds for an analyst going down or coming back, and where each analyst sits in the stereo field. */
+  let cueSynth = null;
+  let cuePanner = null;
+  const PAN = { fx: 0, havens: 0, commodity: 0.5, contrarian: -0.5 };
 
   /** Drone gain node and click synth, built in build(). */
   let droneGain = null;
@@ -245,15 +250,15 @@ const Music = (() => {
     }
 
     // Drone: silent when calm, loud in a crash.
-    droneGain.gain.rampTo(riskMuted ? 0 : 0.6 * stress ** 2, 0.1);
+    droneGain.gain.rampTo(riskMuted ? 0 : 0.14 * stress ** 2, 0.1);
     Tone.Transport.bpm.rampTo(riskToBpm(risk), TEMPO_GLIDE);
 
     // Ominous layers. Each is silent in calm markets and grows as risk climbs.
     // Tritone (G#2 against the D drone): enters around risk 0.3, swells to full.
     const dread = Math.max(0, (risk - 0.3) / 0.7);
-    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.25 * Math.max(dread, stress) ** 2, 0.1);
+    tritoneGain.gain.rampTo(riskMuted ? 0 : 0.08 * Math.max(dread, stress) ** 2, 0.1);
     // Sub rumble (filtered brown noise): rises from risk 0.2.
-    rumbleGain.gain.rampTo(riskMuted ? 0 : 0.3 * Math.max(0, (risk - 0.2) / 0.8) ** 2, 0.1);
+    rumbleGain.gain.rampTo(riskMuted ? 0 : 0.12 * Math.max(0, (risk - 0.2) / 0.8) ** 2, 0.1);
   }
 
   /**
@@ -532,46 +537,47 @@ const Music = (() => {
       envelope: { attack: 0.005, decay: 1.2, sustain: 0.4, release: 0.3 },
       filter: { type: "lowpass", Q: 0.5 },
       filterEnvelope: { attack: 0.005, decay: 0.3, sustain: 1, baseFrequency: 900, octaves: 0 },
-    }), new Tone.Distortion(0.4).connect(new Tone.Filter(900, "lowpass").connect(musicBus)));
-    voices.fx.synth.volume.value = -4;
+    // Level is set after the distortion: the synth volume only changes how hard it drives it.
+    }), new Tone.Distortion(0.4).connect(new Tone.Filter(900, "lowpass").connect(new Tone.Gain(Tone.dbToGain(-7)).connect(musicBus))));
+    voices.fx.synth.volume.value = -6;
     voices.fx.drums = {
       kick: drum(voices.fx, new Tone.MembraneSynth({
         pitchDecay: 0.05, octaves: 4, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.05 },
       })),
     };
-    voices.fx.drums.kick.volume.value = -8;
+    voices.fx.drums.kick.volume.value = -10;
 
     // havens tape pad: detuned saws through a band-pass with a slow, deep wobble.
     const wobble = new Tone.Vibrato({ frequency: 0.6, depth: 0.25 }).connect(room);
     wire(voices.havens, new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: "fatsawtooth", count: 2, spread: 20 },
       envelope: { attack: 0.6, decay: 0.4, sustain: 0.7, release: 2 },
-    }), new Tone.Filter({ type: "bandpass", frequency: 900, Q: 1.2 }).connect(wobble));
-    voices.havens.synth.volume.value = -14;
+    }), new Tone.Filter({ type: "lowpass", frequency: 1100, Q: 0.7 }).connect(wobble));
+    voices.havens.synth.volume.value = -8;
 
     // commodity cowbell: short square through a band-pass, right; clap.
     wire(voices.commodity, new Tone.Synth({
       oscillator: { type: "square" },
       envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.1 },
-    }), new Tone.Filter({ type: "bandpass", frequency: 1400, Q: 1.5 }).connect(new Tone.Panner(0.3).connect(room)));
-    voices.commodity.synth.volume.value = -6;
+    }), new Tone.Filter({ type: "bandpass", frequency: 1400, Q: 0.9 }).connect(new Tone.Panner(0.5).connect(room)));
+    voices.commodity.synth.volume.value = 4;
     voices.commodity.drums = {
       clap: drum(voices.commodity, new Tone.NoiseSynth({
         noise: { type: "pink" }, envelope: { attack: 0.002, decay: 0.22, sustain: 0 },
       })),
     };
-    voices.commodity.drums.clap.volume.value = -12;
+    voices.commodity.drums.clap.volume.value = -4;
 
     // contrarian lead: band-passed driven saw, left; hi-hats.
     wire(voices.contrarian, new Tone.Synth({
       oscillator: { type: "sawtooth" },
       envelope: { attack: 0.005, decay: 0.2, sustain: 0.3, release: 0.2 },
-    }), new Tone.Filter({ type: "bandpass", frequency: 1200, Q: 2 }).connect(new Tone.Distortion(0.5).connect(new Tone.Panner(-0.3).connect(room))));
-    voices.contrarian.synth.volume.value = -14;
+    }), new Tone.Filter({ type: "bandpass", frequency: 2400, Q: 1.2 }).connect(new Tone.Distortion(0.5).connect(new Tone.Panner(-0.5).connect(room))));
+    voices.contrarian.synth.volume.value = -7;
     const hatOut = new Tone.Filter(7000, "highpass");
     hatOut.connect(voices.contrarian.dry);
     const hat = new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.04, sustain: 0 } }).connect(hatOut);
-    hat.volume.value = -20;
+    hat.volume.value = -14;
     voices.contrarian.drums = { hat };
   }
 
@@ -637,7 +643,7 @@ const Music = (() => {
       octaves: 2,
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.02 },
     }).connect(musicBus);
-    clickSynth.volume.value = -6;
+    clickSynth.volume.value = -20;
 
     // Geiger ticks: tiny white-noise bursts through a band-pass, straight to the
     // output (not through the calm low-pass, which would swallow them) but ducked
@@ -648,6 +654,14 @@ const Music = (() => {
       envelope: { attack: 0.0005, decay: 0.004, sustain: 0, release: 0.003 },
     }).connect(new Tone.Filter({ frequency: 3500, type: "bandpass", Q: 1.2 }).connect(geigerGain));
     geigerNext = Tone.now();
+
+    // Cues go straight to the output, so the calm low-pass and the card's duck never hide them.
+    cuePanner = new Tone.Panner(0).toDestination();
+    cueSynth = new Tone.Synth({
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.15 },
+    }).connect(cuePanner);
+    cueSynth.volume.value = -10;
     applyRisk();
 
     // Re-apply any mutes set from the page before the synths existed.
@@ -733,6 +747,34 @@ const Music = (() => {
   function setRisk(value) {
     if (!Number.isFinite(value)) return;
     target.risk = Math.min(1, Math.max(0, value));
+  }
+
+  /**
+   * A falling sweep from where the analyst sits in the mix: it has gone silent.
+   * @param {string} name Analyst name.
+   * @returns {void}
+   */
+  function analystDown(name) {
+    if (!built) return;
+    const t = Tone.now() + 0.05;
+    cuePanner.pan.setValueAtTime(PAN[name] ?? 0, t);
+    cueSynth.triggerAttack(880, t, 0.9);
+    cueSynth.frequency.exponentialRampToValueAtTime(90, t + 0.7);
+    cueSynth.triggerRelease(t + 0.7);
+  }
+
+  /**
+   * A short rising blip: the analyst is back (its part returns at the next bar line).
+   * @param {string} name Analyst name.
+   * @returns {void}
+   */
+  function analystBack(name) {
+    if (!built) return;
+    const t = Tone.now() + 0.05;
+    cuePanner.pan.setValueAtTime(PAN[name] ?? 0, t);
+    cueSynth.triggerAttack(330, t, 0.7);
+    cueSynth.frequency.exponentialRampToValueAtTime(990, t + 0.18);
+    cueSynth.triggerRelease(t + 0.22);
   }
 
   /**
@@ -892,6 +934,6 @@ const Music = (() => {
 
   return {
     start, setUnison, setRisk, setViews, setRebound, getSmoothed, getTrust, getTempo,
-    sting, decision, hold, setMute, setRiskMute, setDuck, setVolume,
+    sting, decision, hold, setMute, setRiskMute, setDuck, setVolume, analystDown, analystBack,
   };
 })();
